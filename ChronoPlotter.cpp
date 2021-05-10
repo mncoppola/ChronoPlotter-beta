@@ -1717,39 +1717,49 @@ ChronoSeries *PowderTest::ExtractLabRadarSeries ( QTextStream &csv )
 	series->isValid = false;
 	series->seriesNum = -1;
 
-	int i = 0;
 	while ( ! csv.atEnd() )
 	{
 		QString line = csv.readLine().replace(QString(1, QChar('\0')), "");
 
 		// LabRadar uses semicolon (;) as delimeter
 		QStringList rows(line.split(";"));
-		//qDebug() << "Line" << i << ":" << rows;
+		//qDebug() << "Line:" << rows;
 
-		if ( i == 3 )
+		// Only parse rows with enough columns to index
+		if ( rows.size() < 2 )
 		{
-			series->seriesNum = rows.at(1).toInt();
-			qDebug() << "seriesNum =" << series->seriesNum;
+			qDebug() << "Less than 2, skipping row";
+			continue;
 		}
-		else if ( i == 6 )
+
+		if ( (rows.size() >= 17) && (rows.at(0).compare("Shot ID") != 0) )
 		{
-			series->velocityUnits = rows.at(1);
-			qDebug() << "velocityUnits =" << series->velocityUnits;
-		}
-		else if ( i > 17 )
-		{
-			if ( i == 18 )
+			// Parsing a velocity record
+			if ( series->firstDate.isNull() )
 			{
 				series->firstDate = rows.at(15);
+				qDebug() << "firstDate =" << series->firstDate;
+			}
+
+			if ( series->firstTime.isNull() )
+			{
 				series->firstTime = rows.at(16);
-				qDebug() << "firstDate =" << series->firstDate << ", firstTime =" << series->firstTime;
+				qDebug() << "firstTime =" << series->firstTime;
 			}
 
 			series->muzzleVelocities.append(rows.at(1).toInt());
 			qDebug() << "muzzleVelocities +=" << rows.at(1).toInt();
 		}
-
-		i++;
+		else if ( rows.at(0).compare("Series No") == 0 )
+		{
+			series->seriesNum = rows.at(1).toInt();
+			qDebug() << "seriesNum =" << series->seriesNum;
+		}
+		else if ( rows.at(0).compare("Units velocity") == 0 )
+		{
+			series->velocityUnits = rows.at(1);
+			qDebug() << "velocityUnits =" << series->velocityUnits;
+		}
 	}
 
 	// Ensure we have a valid LabRadar series
@@ -3061,16 +3071,15 @@ About::About ( QWidget *parent )
 {
 	qDebug() << "About this app";
 
-	QByteArray svgBytes = QByteArray("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<svg\nxmlns:dc=\"http://purl.org/dc/elements/1.1/\"\nxmlns:cc=\"http://creativecommons.org/ns#\"\nxmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\nxmlns:svg=\"http://www.w3.org/2000/svg\"\nxmlns=\"http://www.w3.org/2000/svg\"\nviewBox=\"0 0 475 475\"\nheight=\"475\"\nwidth=\"475\"\nxml:space=\"preserve\"\nversion=\"1.1\"\nid=\"svg2\"><metadata\n id=\"metadata8\"><rdf:RDF><cc:Work\n	 rdf:about=\"\"><dc:format>image/svg+xml</dc:format><dc:type\n	   rdf:resource=\"http://purl.org/dc/dcmitype/StillImage\" /><dc:title></dc:title></cc:Work></rdf:RDF></metadata><defs\n id=\"defs6\" /><g\n transform=\"matrix(1.25,0,0,-1.25,0,475)\"\n id=\"g10\"><g\n   transform=\"scale(0.1,0.1)\"\n   id=\"g12\"><path\n	 id=\"path14\"\n	 style=\"fill:#100f0d;fill-opacity:1;fill-rule:nonzero;stroke:none\"\n	 d=\"m 1950.9,102.539 0,847.461 -40.71,0 0,122.82 c 17.52,4.53 30.53,20.33 30.53,39.27 0,18.95 -13.01,34.73 -30.53,39.27 l 0,124.27 c 17.52,4.53 30.53,20.32 30.53,39.27 0,18.95 -13.01,34.74 -30.53,39.27 l 0,124.28 c 17.52,4.53 30.53,20.31 30.53,39.27 0,18.94 -13.01,34.73 -30.53,39.27 l 0,124.26 c 17.52,4.53 30.53,20.33 30.53,39.27 0,18.94 -13.01,34.74 -30.53,39.27 l 0,130.03 130.02,0 c 4.54,-17.52 20.33,-30.54 39.27,-30.54 18.95,0 34.73,13.02 39.28,30.54 l 124.26,0 c 4.54,-17.52 20.33,-30.54 39.27,-30.54 18.95,0 34.73,13.02 39.28,30.54 l 124.26,0 c 4.54,-17.52 20.33,-30.54 39.27,-30.54 18.95,0 34.74,13.02 39.28,30.54 l 124.26,0 c 4.54,-17.52 20.33,-30.54 39.28,-30.54 18.94,0 34.72,13.02 39.27,30.54 l 122.82,0 0,-40.72 847.45,0 C 3670.97,896.43 2903.57,129.031 1950.9,102.539 Z M 102.535,1849.1 l 847.469,0 0,40.72 122.816,0 c 4.54,-17.52 20.33,-30.54 39.27,-30.54 18.95,0 34.74,13.02 39.28,30.54 l 124.26,0 c 4.54,-17.52 20.33,-30.54 39.28,-30.54 18.95,0 34.74,13.02 39.28,30.54 l 124.26,0 c 4.54,-17.52 20.32,-30.54 39.28,-30.54 18.93,0 34.73,13.02 39.27,30.54 l 124.26,0 c 4.54,-17.52 20.33,-30.54 39.27,-30.54 18.94,0 34.73,13.02 39.27,30.54 l 130.03,0 0,-130.03 c -17.53,-4.55 -30.54,-20.33 -30.54,-39.27 0,-18.94 13.01,-34.72 30.54,-39.27 l 0,-124.26 c -17.53,-4.55 -30.54,-20.33 -30.54,-39.27 0,-18.96 13.01,-34.74 30.54,-39.27 l 0,-124.28 c -17.53,-4.53 -30.54,-20.32 -30.54,-39.27 0,-18.95 13.01,-34.74 30.54,-39.27 l 0,-124.27 c -17.53,-4.54 -30.54,-20.32 -30.54,-39.27 0,-18.94 13.01,-34.73 30.54,-39.27 l 0,-122.82 -40.72,0 0,-847.461 C 896.438,129.02 129.02,896.43 102.535,1849.1 Z m 1746.575,1848.35 0,-847.45 40.72,0 0,-122.82 c -17.53,-4.55 -30.54,-20.33 -30.54,-39.28 0,-18.94 13.01,-34.73 30.54,-39.28 l 0,-124.25 c -17.53,-4.55 -30.54,-20.33 -30.54,-39.28 0,-18.94 13.01,-34.73 30.54,-39.27 l 0,-124.26 c -17.53,-4.55 -30.54,-20.33 -30.54,-39.28 0,-18.94 13.01,-34.73 30.54,-39.27 l 0,-124.26 c -17.53,-4.55 -30.54,-20.33 -30.54,-39.28 0,-18.94 13.01,-34.73 30.54,-39.27 l 0,-130.02 -130.03,0 c -4.54,17.52 -20.33,30.53 -39.27,30.53 -18.94,0 -34.73,-13.01 -39.27,-30.53 l -124.26,0 c -4.54,17.52 -20.34,30.53 -39.27,30.53 -18.96,0 -34.74,-13.01 -39.28,-30.53 l -124.26,0 c -4.54,17.52 -20.33,30.53 -39.28,30.53 -18.95,0 -34.74,-13.01 -39.28,-30.53 l -124.26,0 c -4.54,17.52 -20.33,30.53 -39.28,30.53 -18.94,0 -34.73,-13.01 -39.27,-30.53 l -122.816,0 0,40.71 -847.469,0 c 26.481,952.67 793.899,1720.08 1746.575,1746.56 z m 1848.35,-1746.56 -847.45,0 0,-40.71 -122.82,0 c -4.55,17.52 -20.33,30.53 -39.27,30.53 -18.95,0 -34.74,-13.01 -39.28,-30.53 l -124.26,0 c -4.54,17.52 -20.33,30.53 -39.28,30.53 -18.94,0 -34.73,-13.01 -39.27,-30.53 l -124.26,0 c -4.55,17.52 -20.33,30.53 -39.28,30.53 -18.94,0 -34.73,-13.01 -39.27,-30.53 l -124.26,0 c -4.55,17.52 -20.33,30.53 -39.28,30.53 -18.94,0 -34.73,-13.01 -39.27,-30.53 l -130.02,0 0,130.02 c 17.52,4.54 30.53,20.33 30.53,39.27 0,18.95 -13.01,34.73 -30.53,39.28 l 0,124.26 c 17.52,4.54 30.53,20.33 30.53,39.27 0,18.95 -13.01,34.73 -30.53,39.28 l 0,124.26 c 17.52,4.54 30.53,20.33 30.53,39.27 0,18.95 -13.01,34.73 -30.53,39.28 l 0,124.25 c 17.52,4.55 30.53,20.34 30.53,39.28 0,18.95 -13.01,34.73 -30.53,39.28 l 0,122.82 40.71,0 0,847.45 c 952.67,-26.49 1720.08,-793.9 1746.56,-1746.56 z M 1900.01,3800 C 850.664,3800 0,2949.34 0,1900 0,850.648 850.664,0 1900.01,0 2949.35,0 3800,850.648 3800,1900 c 0,1049.34 -850.65,1900 -1899.99,1900\" /></g></g></svg>");
+	QPixmap logoPix(":/images/logo.png");
 
 	QLabel *about1 = new QLabel();
 	about1->setTextFormat(Qt::RichText);
-	about1->setText(QString("<center><h1>ChronoPlotter %1</h1>By Michael Coppola<br><a href=\"https://github.com/mncoppola/ChronoPlotter\">github.com/mncoppola/ChronoPlotter</a>").arg(CHRONOPLOTTER_VERSION));
+	about1->setText(QString("<center><h1>Version %1</h1>By Michael Coppola<br><a href=\"https://github.com/mncoppola/ChronoPlotter\">github.com/mncoppola/ChronoPlotter</a>").arg(CHRONOPLOTTER_VERSION));
 	about1->setOpenExternalLinks(true);
 
-	QSvgWidget *svg = new QSvgWidget();
-	svg->renderer()->load(svgBytes);
-	svg->setFixedSize(150, 150);
+	QLabel *logo = new QLabel();
+	logo->setPixmap(logoPix.scaledToWidth(600, Qt::SmoothTransformation));
 
 	QLabel *about2 = new QLabel();
 	about2->setTextFormat(Qt::RichText);
@@ -3079,12 +3088,11 @@ About::About ( QWidget *parent )
 
 	QVBoxLayout *layout = new QVBoxLayout();
 	layout->addStretch(1);
+	layout->addWidget(logo);
 	layout->addWidget(about1);
 	layout->addSpacing(10);
-	layout->addWidget(svg);
-	layout->addSpacing(10);
 	layout->addWidget(about2);
-	layout->setAlignment(svg, Qt::AlignHCenter);
+	layout->setAlignment(logo, Qt::AlignHCenter);
 	layout->addStretch(3);
 
 	setLayout(layout);
