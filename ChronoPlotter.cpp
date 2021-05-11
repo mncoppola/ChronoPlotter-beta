@@ -1692,7 +1692,7 @@ void PowderTest::selectLabRadarDirectory ( bool state )
 
 		QMessageBox *msg = new QMessageBox();
 		msg->setIcon(QMessageBox::Critical);
-		msg->setText(QString("Unable to find chronograph data in '%1'").arg(path));
+		msg->setText(QString("Unable to find LabRadar data in '%1'").arg(path));
 		msg->setWindowTitle("Error");
 		msg->exec();
 	}
@@ -1843,7 +1843,7 @@ void PowderTest::selectMagnetoSpeedFile ( bool state )
 
 		QMessageBox *msg = new QMessageBox();
 		msg->setIcon(QMessageBox::Critical);
-		msg->setText(QString("Unable to find chronograph data in '%1'").arg(path));
+		msg->setText(QString("Unable to find MagnetoSpeed data in '%1'").arg(path));
 		msg->setWindowTitle("Error");
 		msg->exec();
 	}
