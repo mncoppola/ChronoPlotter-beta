@@ -16,9 +16,10 @@
 #include <QScrollArea>
 #include <QGridLayout>
 #include <QDialog>
+#include <QMainWindow>
 #include "qcustomplot/qcustomplot.h"
 
-#define CHRONOPLOTTER_VERSION "2.0.0"
+#define CHRONOPLOTTER_VERSION "2.1.0-prerelease"
 
 #define SCATTER 0
 #define LINE_SD 1
@@ -47,17 +48,33 @@
 #define ABOVE_STRING 0
 #define BELOW_STRING 0
 
+class MainWindow : public QMainWindow
+{
+	Q_OBJECT
+
+	public:
+		MainWindow() : QMainWindow() {};
+		~MainWindow() {};
+
+	protected:
+		void closeEvent(QCloseEvent *);
+};
+
 struct ChronoSeries
 {
 	bool isValid;
 	int seriesNum;
-	QString name;
+	QLabel *name;
 	QList<int> muzzleVelocities;
 	QString velocityUnits;
+	QLabel *result;
 	QString firstDate;
 	QString firstTime;
 	QDoubleSpinBox *chargeWeight;
+	QPushButton *enterDataButton;
+	QPushButton *deleteButton;
 	QCheckBox *enabled;
+	bool deleted;
 };
 
 class QHLine : public QFrame
@@ -89,10 +106,19 @@ class About : public QWidget
 
 struct SeatingSeries
 {
+	bool isValid;
 	int seriesNum;
 	QLabel *name;
+	QList<QPair<double, double> > coordinates;
+	double extremeSpread;
+	double radialStdev;
+	double meanRadius;
+	//QDate firstDate;
+	QString firstDate;
+	QString firstTime;
 	QDoubleSpinBox *cartridgeLength;
 	QDoubleSpinBox *groupSize;
+	QLabel *groupSizeLabel;
 	QPushButton *deleteButton;
 	QCheckBox *enabled;
 	bool deleted;
@@ -114,6 +140,9 @@ class SeatingDepthTest : public QWidget
 		void trendCheckBoxChanged(bool);
 		void cartridgeMeasurementTypeChanged(int);
 		void groupMeasurementTypeChanged(int);
+		void loadNewShotData(bool);
+		void selectShotMarkerFile(bool);
+		void manualDataEntry(bool);
 		void addNewClicked(bool);
 		void deleteClicked(bool);
 		void autofillClicked(bool);
@@ -123,12 +152,22 @@ class SeatingDepthTest : public QWidget
 		void saveGraph(bool);
 
 	protected:
+		double calculateES ( QList<QPair<double, double> > );
+		double calculateRSD ( QList<QPair<double, double> > );
+		static double pairSumX ( double, const QPair<double, double> );
+		static double pairSumY ( double, const QPair<double, double> );
+		double calculateMR ( QList<QPair<double, double> > );
+		QList<SeatingSeries *> ExtractShotMarkerSeries ( QTextStream & );
 		void optionCheckBoxChanged(QCheckBox *, QLabel *, QComboBox *);
+		void DisplaySeriesData ( void );
 		void renderGraph ( bool );
 
 	private:
 		GraphPreview *graphPreview;
 		QString prevSaveDir;
+		QString prevShotMarkerDir;
+		QStackedWidget *stackedWidget;
+		QWidget *scrollWidget;
 		QVBoxLayout *scrollLayout;
 		QScrollArea *scrollArea;
 		QGridLayout *seatingSeriesGrid;
@@ -173,12 +212,20 @@ class PowderTest : public QWidget
 		void avgCheckBoxChanged(bool);
 		void vdCheckBoxChanged(bool);
 		void trendCheckBoxChanged(bool);
+		void loadNewChronographData(bool);
 		void selectLabRadarDirectory(bool);
 		void selectMagnetoSpeedFile(bool);
+		void selectProChronoFile(bool);
+		void manualDataEntry(bool);
 		void rrClicked(bool);
+		void addNewClicked(bool);
+		void enterDataClicked(bool);
+		void deleteClicked(bool);
 		void autofillClicked(bool);
+		void velocityUnitsChanged(int);
 		void headerCheckBoxChanged(int);
-		void seriesCheckBoxChanged ( int );
+		void seriesCheckBoxChanged(int);
+		void seriesManualCheckBoxChanged(int);
 		void showGraph(bool);
 		void saveGraph(bool);
 
@@ -186,6 +233,7 @@ class PowderTest : public QWidget
 		void optionCheckBoxChanged(QCheckBox *, QLabel *, QComboBox *);
 		ChronoSeries *ExtractLabRadarSeries ( QTextStream & );
 		QList<ChronoSeries *> ExtractMagnetoSpeedSeries ( QTextStream & );
+		QList<ChronoSeries *> ExtractProChronoSeries ( QTextStream & );
 		void DisplaySeriesData ( void );
 		void renderGraph ( bool );
 
@@ -193,12 +241,13 @@ class PowderTest : public QWidget
 		GraphPreview *graphPreview;
 		QString prevLabRadarDir;
 		QString prevMagnetoSpeedDir;
+		QString prevProChronoDir;
 		QString prevSaveDir;
 		QStackedWidget *stackedWidget;
-		QVBoxLayout *scrollLayout;
+		QWidget *scrollWidget;
 		QScrollArea *scrollArea;
 		QGridLayout *seriesGrid;
-		bool utilitiesDisplayed;
+		QLabel *headerResult;
 		QLineEdit *graphTitle;
 		QLineEdit *rifle;
 		QLineEdit *projectile;
@@ -206,6 +255,7 @@ class PowderTest : public QWidget
 		QLineEdit *brass;
 		QLineEdit *primer;
 		QLineEdit *weather;
+		QPushButton *addNewButton;
 		QComboBox *graphType;
 		QComboBox *velocityUnits;
 		QCheckBox *esCheckBox;
@@ -232,6 +282,23 @@ class RoundRobinDialog : public QDialog
 	public:
 		RoundRobinDialog(PowderTest *, QDialog *parent = 0);
 		~RoundRobinDialog() {};
+};
+
+class EnterVelocitiesDialog : public QDialog
+{
+	Q_OBJECT
+
+	public:
+		EnterVelocitiesDialog(ChronoSeries *, QDialog *parent = 0);
+		~EnterVelocitiesDialog() {};
+		QList<int> getValues();
+
+	public slots:
+		void textChanged();
+
+	private:
+		QLabel *velocitiesEntered;
+		QTextEdit *textEdit;
 };
 
 struct AutofillValues

@@ -12,3 +12,5 @@ SOURCES += ChronoPlotter.cpp qcustomplot/qcustomplot.cpp
 QT += widgets svg printsupport
 
 RESOURCES += resources.qrc
+
+RC_ICONS = images/icons/icon.ico

@@ -28,8 +28,6 @@
 #include <QDialogButtonBox>
 #include <QDialog>
 #include <QByteArray>
-#include <QSvgWidget>
-#include <QSvgRenderer>
 #include "qcustomplot/qcustomplot.h"
 
 #include "ChronoPlotter.h"
@@ -294,22 +292,115 @@ AutofillSeatingValues *AutofillSeatingDialog::getValues ( void )
 	return values;
 }
 
+EnterVelocitiesDialog::EnterVelocitiesDialog ( ChronoSeries *series, QDialog *parent )
+	: QDialog(parent)
+{
+	qDebug() << "Enter velocities dialog";
+
+	setWindowTitle("Enter velocities");
+
+	QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+	connect(buttonBox, &QDialogButtonBox::accepted, this, &EnterVelocitiesDialog::accept);
+	connect(buttonBox, &QDialogButtonBox::rejected, this, &EnterVelocitiesDialog::reject);
+
+	QVBoxLayout *layout = new QVBoxLayout();
+
+	velocitiesEntered = new QLabel(QString("Velocities entered: %1").arg(series->muzzleVelocities.size()));
+	layout->addWidget(velocitiesEntered);
+
+	textEdit = new QTextEdit();
+	textEdit->setPlaceholderText("Enter velocity numbers here, each one on a new line.\n\nFor example:\n2785\n2782\n2798");
+
+	if ( series->muzzleVelocities.size() > 0 )
+	{
+		QString prevVelocs;
+		for ( int i = 0; i < series->muzzleVelocities.size(); i++ )
+		{
+			prevVelocs += QString::number(series->muzzleVelocities.at(i));
+			if ( i < (series->muzzleVelocities.size() - 1) )
+			{
+				prevVelocs += "\n";
+			}
+		}
+
+		textEdit->setPlainText(prevVelocs);
+	}
+
+	connect(textEdit, SIGNAL(textChanged()), this, SLOT(textChanged()));
+	layout->addWidget(textEdit);
+
+	layout->addWidget(buttonBox);
+	setLayout(layout);
+
+	setFixedSize(sizeHint());
+}
+
+void EnterVelocitiesDialog::textChanged ( )
+{
+	//qDebug() << "textChanged";
+
+	QStringList list = textEdit->toPlainText().split("\n");
+	//qDebug() << list;
+
+	int numVelocities = 0;
+	for ( int i = 0; i < list.length(); i++ )
+	{
+		// validate inputted number
+		bool ok;
+		list.at(i).toInt(&ok);
+		if ( ok )
+		{
+			numVelocities++;
+		}
+		else
+		{
+			qDebug() << "Skipping invalid number:" << list.at(i);
+		}
+	}
+
+	velocitiesEntered->setText(QString("Velocities entered: %1").arg(numVelocities));
+}
+
+QList<int> EnterVelocitiesDialog::getValues ( void )
+{
+	QList<int> values;
+
+	QStringList list = textEdit->toPlainText().split("\n");
+	qDebug() << list;
+
+	for ( int i = 0; i < list.length(); i++ )
+	{
+		bool ok;
+		int velocity = list.at(i).toInt(&ok);
+		if ( ok )
+		{
+			values.append(velocity);
+		}
+		else
+		{
+			qDebug() << "Skipping invalid number:" << list.at(i);
+		}
+	}
+
+	return values;
+}
+
 PowderTest::PowderTest ( QWidget *parent )
 	: QWidget(parent)
 {
 	qDebug() << "Powder test";
 
 	graphPreview = NULL;
-	prevLabRadarDir = "";
-	prevMagnetoSpeedDir = "";
-	prevSaveDir = "";
-	utilitiesDisplayed = false;
+	prevLabRadarDir = QDir::homePath();
+	prevMagnetoSpeedDir = QDir::homePath();
+	prevProChronoDir = QDir::homePath();
+	prevSaveDir = QDir::homePath();
 
 	/* Left panel */
 
 	QVBoxLayout *leftLayout = new QVBoxLayout();
 
-	QLabel *selectLabel = new QLabel("Select LabRadar or MagnetoSpeed\nto populate series data\n");
+	QLabel *selectLabel = new QLabel("Select chronograph type\nto populate series data\n");
 	selectLabel->setAlignment(Qt::AlignCenter);
 
 	QPushButton *lrDirButton = new QPushButton("Select LabRadar directory");
@@ -326,6 +417,20 @@ PowderTest::PowderTest ( QWidget *parent )
 	msFileButton->setMinimumHeight(50);
 	msFileButton->setMaximumHeight(50);
 
+	QPushButton *pcFileButton = new QPushButton("Select ProChrono file");
+	connect(pcFileButton, SIGNAL(clicked(bool)), this, SLOT(selectProChronoFile(bool)));
+	pcFileButton->setMinimumWidth(300);
+	pcFileButton->setMaximumWidth(300);
+	pcFileButton->setMinimumHeight(50);
+	pcFileButton->setMaximumHeight(50);
+
+	QPushButton *manualEntryButton = new QPushButton("Manual data entry");
+	connect(manualEntryButton, SIGNAL(clicked(bool)), this, SLOT(manualDataEntry(bool)));
+	manualEntryButton->setMinimumWidth(300);
+	manualEntryButton->setMaximumWidth(300);
+	manualEntryButton->setMinimumHeight(50);
+	manualEntryButton->setMaximumHeight(50);
+
 	QVBoxLayout *placeholderLayout = new QVBoxLayout();
 	placeholderLayout->addStretch(0);
 	placeholderLayout->addWidget(selectLabel);
@@ -334,6 +439,10 @@ PowderTest::PowderTest ( QWidget *parent )
 	placeholderLayout->setAlignment(lrDirButton, Qt::AlignCenter);
 	placeholderLayout->addWidget(msFileButton);
 	placeholderLayout->setAlignment(msFileButton, Qt::AlignCenter);
+	placeholderLayout->addWidget(pcFileButton);
+	placeholderLayout->setAlignment(pcFileButton, Qt::AlignCenter);
+	placeholderLayout->addWidget(manualEntryButton);
+	placeholderLayout->setAlignment(manualEntryButton, Qt::AlignCenter);
 	placeholderLayout->addStretch(0);
 
 	QWidget *placeholderWidget = new QWidget();
@@ -343,10 +452,10 @@ PowderTest::PowderTest ( QWidget *parent )
 	stackedWidget->addWidget(placeholderWidget);
 	stackedWidget->setCurrentIndex(0);
 
-	scrollLayout = new QVBoxLayout();
-	scrollLayout->addWidget(stackedWidget);
+	QVBoxLayout *stackedLayout = new QVBoxLayout();
+	stackedLayout->addWidget(stackedWidget);
 	QGroupBox *chronoGroupBox = new QGroupBox("Chronograph data:");
-	chronoGroupBox->setLayout(scrollLayout);
+	chronoGroupBox->setLayout(stackedLayout);
 
 	leftLayout->addWidget(chronoGroupBox);
 
@@ -510,8 +619,10 @@ void PowderTest::DisplaySeriesData ( void )
 	// Sort the list by series number
 	std::sort(seriesData.begin(), seriesData.end(), ChronoSeriesComparator);
 
-	// If we already have series data displayed, clear it out first. This call is a no-op if scrollArea is not already added to stackedWidget.
-	stackedWidget->removeWidget(scrollArea);
+	// If we already have series data displayed, clear it out first. This call is a no-op if scrollWidget is not already added to stackedWidget.
+	stackedWidget->removeWidget(scrollWidget);
+
+	QVBoxLayout *scrollLayout = new QVBoxLayout();
 
 	// Wrap grid in a widget to make the grid scrollable
 	QWidget *scrollAreaWidget = new QWidget();
@@ -528,43 +639,37 @@ void PowderTest::DisplaySeriesData ( void )
 	scrollArea->setWidget(scrollAreaWidget);
 	scrollArea->setWidgetResizable(true);
 
-	stackedWidget->addWidget(scrollArea);
-	stackedWidget->setCurrentWidget(scrollArea);
+	scrollLayout->addWidget(scrollArea);
 
-	// Now that we've hidden the placeholder text + buttons, reveal the utilities buttons under the scroll area
-	if ( ! utilitiesDisplayed )
-	{
-		// Create hidden buttons under the scroll area. They'll be revealed once the left panel is replaced with chrono series data.
+	/* Create utilities toolbar under scroll area */
 
-		QPushButton *lrDirButton2 = new QPushButton("Select LabRadar dir");
-		connect(lrDirButton2, SIGNAL(clicked(bool)), this, SLOT(selectLabRadarDirectory(bool)));
-		lrDirButton2->setMinimumWidth(225);
-		lrDirButton2->setMaximumWidth(225);
+	QPushButton *loadNewButton = new QPushButton("Load new chronograph file");
+	connect(loadNewButton, SIGNAL(clicked(bool)), this, SLOT(loadNewChronographData(bool)));
+	loadNewButton->setMinimumWidth(225);
+	loadNewButton->setMaximumWidth(225);
 
-		QPushButton *msDirButton2 = new QPushButton("Select MagnetoSpeed file");
-		connect(msDirButton2, SIGNAL(clicked(bool)), this, SLOT(selectMagnetoSpeedFile(bool)));
-		msDirButton2->setMinimumWidth(225);
-		msDirButton2->setMaximumWidth(225);
+	QPushButton *rrButton = new QPushButton("Convert from round-robin");
+	connect(rrButton, SIGNAL(clicked(bool)), this, SLOT(rrClicked(bool)));
+	rrButton->setMinimumWidth(225);
+	rrButton->setMaximumWidth(225);
 
-		QPushButton *rrButton = new QPushButton("Convert from round-robin");
-		connect(rrButton, SIGNAL(clicked(bool)), this, SLOT(rrClicked(bool)));
-		rrButton->setMinimumWidth(225);
-		rrButton->setMaximumWidth(225);
+	QPushButton *autofillButton = new QPushButton("Auto-fill charge weights");
+	connect(autofillButton, SIGNAL(clicked(bool)), this, SLOT(autofillClicked(bool)));
+	autofillButton->setMinimumWidth(225);
+	autofillButton->setMaximumWidth(225);
 
-		QPushButton *autofillButton = new QPushButton("Auto-fill charge weights");
-		connect(autofillButton, SIGNAL(clicked(bool)), this, SLOT(autofillClicked(bool)));
-		autofillButton->setMinimumWidth(225);
-		autofillButton->setMaximumWidth(225);
+	QHBoxLayout *utilitiesLayout = new QHBoxLayout();
+	utilitiesLayout->addWidget(loadNewButton);
+	utilitiesLayout->addWidget(rrButton);
+	utilitiesLayout->addWidget(autofillButton);
 
-		QHBoxLayout *utilitiesLayout = new QHBoxLayout();
-		utilitiesLayout->addWidget(lrDirButton2);
-		utilitiesLayout->addWidget(msDirButton2);
-		utilitiesLayout->addWidget(rrButton);
-		utilitiesLayout->addWidget(autofillButton);
+	scrollLayout->addLayout(utilitiesLayout);
 
-		scrollLayout->addLayout(utilitiesLayout);
-		utilitiesDisplayed = true;
-	}
+	scrollWidget = new QWidget();
+	scrollWidget->setLayout(scrollLayout);
+
+	stackedWidget->addWidget(scrollWidget);
+	stackedWidget->setCurrentWidget(scrollWidget);
 
 	QCheckBox *headerCheckBox = new QCheckBox();
 	headerCheckBox->setChecked(true);
@@ -577,7 +682,7 @@ void PowderTest::DisplaySeriesData ( void )
 	seriesGrid->addWidget(headerName, 0, 1, Qt::AlignVCenter);
 	QLabel *headerChargeWeight = new QLabel("Charge Weight");
 	seriesGrid->addWidget(headerChargeWeight, 0, 2, Qt::AlignVCenter);
-	QLabel *headerResult = new QLabel("Series Result");
+	headerResult = new QLabel("Series Result");
 	seriesGrid->addWidget(headerResult, 0, 3, Qt::AlignVCenter);
 	QLabel *headerDate = new QLabel("Series Date");
 	seriesGrid->addWidget(headerDate, 0, 4, Qt::AlignVCenter);
@@ -589,7 +694,7 @@ void PowderTest::DisplaySeriesData ( void )
 		connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesCheckBoxChanged(int)));
 
 		seriesGrid->addWidget(series->enabled, i + 1, 0);
-		seriesGrid->addWidget(new QLabel(series->name), i + 1, 1, Qt::AlignVCenter);
+		seriesGrid->addWidget(series->name, i + 1, 1, Qt::AlignVCenter);
 
 		QHBoxLayout *chargeWeightLayout = new QHBoxLayout();
 		chargeWeightLayout->addWidget(series->chargeWeight);
@@ -614,6 +719,327 @@ void PowderTest::DisplaySeriesData ( void )
 	scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
 	scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	scrollArea->setWidgetResizable(true);
+}
+
+void PowderTest::addNewClicked ( bool state )
+{
+	qDebug() << "addNewClicked state =" << state;
+
+	// un-bold the button after the first click
+	addNewButton->setStyleSheet("");
+
+	int numRows = seriesGrid->rowCount();
+
+	// Remove the stretch from the last row, we'll be using the row for our new series
+	seriesGrid->setRowStretch(numRows - 1, 0);
+
+	qDebug() << "numRows =" << numRows;
+
+	ChronoSeries *series = new ChronoSeries();
+
+	series->deleted = false;
+
+	series->enabled = new QCheckBox();
+	series->enabled->setChecked(true);
+
+	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesManualCheckBoxChanged(int)));
+	seriesGrid->addWidget(series->enabled, numRows - 1, 0);
+
+	int newSeriesNum = 1;
+	for ( int i = seriesData.size() - 1; i >= 0; i-- )
+	{
+		ChronoSeries *series = seriesData.at(i);
+		if ( ! series->deleted )
+		{
+			newSeriesNum = series->seriesNum + 1;
+			qDebug() << "Found last un-deleted series" << series->seriesNum << "(" << series->name->text() << ") at index" << i;
+			break;
+		}
+	}
+
+	series->seriesNum = newSeriesNum;
+
+	series->name = new QLabel(QString("Series %1").arg(newSeriesNum));
+	seriesGrid->addWidget(series->name, numRows - 1, 1);
+
+	series->chargeWeight = new QDoubleSpinBox();
+	series->chargeWeight->setDecimals(2);
+	series->chargeWeight->setSingleStep(0.1);
+	series->chargeWeight->setMinimumWidth(100);
+	series->chargeWeight->setMaximumWidth(100);
+	seriesGrid->addWidget(series->chargeWeight, numRows - 1, 2);
+
+	const char *velocityUnits2;
+	if ( velocityUnits->currentIndex() == FPS )
+	{
+		velocityUnits2 = "fps";
+	}
+	else
+	{
+		velocityUnits2 = "m/s";
+	}
+
+	series->result = new QLabel(QString("0 shots, 0-0 %1").arg(velocityUnits2));
+	seriesGrid->addWidget(series->result, numRows - 1, 3, Qt::AlignVCenter);
+
+	series->enterDataButton = new QPushButton("Enter velocity data");
+	connect(series->enterDataButton, SIGNAL(clicked(bool)), this, SLOT(enterDataClicked(bool)));
+	series->enterDataButton->setFixedSize(series->enterDataButton->minimumSizeHint());
+	seriesGrid->addWidget(series->enterDataButton, numRows - 1, 4, Qt::AlignLeft);
+
+	series->deleteButton = new QPushButton();
+	connect(series->deleteButton, SIGNAL(clicked(bool)), this, SLOT(deleteClicked(bool)));
+	series->deleteButton->setIcon(style()->standardIcon(QStyle::SP_DialogCancelButton));
+	series->deleteButton->setFixedSize(series->deleteButton->minimumSizeHint());
+	seriesGrid->addWidget(series->deleteButton, numRows - 1, 5, Qt::AlignLeft);
+
+	seriesData.append(series);
+
+	// Add an empty stretch row at the end for proper spacing
+	seriesGrid->setRowStretch(numRows, 1);
+}
+
+void PowderTest::enterDataClicked ( bool state )
+{
+	QPushButton *enterDataButton = qobject_cast<QPushButton *>(sender());
+
+	qDebug() << "enterDataClicked state =" << state;
+
+	// We have the button object, now locate its ChronoSeries object
+	ChronoSeries *series = NULL;
+	for ( int i = 0; i < seriesData.size(); i++ )
+	{
+		ChronoSeries *curSeries = seriesData.at(i);
+		if ( enterDataButton == curSeries->enterDataButton )
+		{
+			series = curSeries;
+			break;
+		}
+	}
+
+	EnterVelocitiesDialog *dialog = new EnterVelocitiesDialog(series);
+	int result = dialog->exec();
+
+	qDebug() << "dialog result:" << result;
+
+	if ( result )
+	{
+		qDebug() << "User OK'd dialog";
+
+		QList<int> values = dialog->getValues();
+
+		if ( values.size() == 0 )
+		{
+			qDebug() << "No valid velocities were provided, bailing...";
+			return;
+		}
+
+		// We have the button object, now locate its row in the grid
+		for ( int i = 0; i < seriesData.size(); i++ )
+		{
+			ChronoSeries *series = seriesData.at(i);
+			if ( enterDataButton == series->enterDataButton )
+			{
+				qDebug() << "Setting velocities for Series" << series->seriesNum;
+
+				series->muzzleVelocities = values;
+
+				const char *velocityUnits2;
+				if ( velocityUnits->currentIndex() == FPS )
+				{
+					velocityUnits2 = "fps";
+				}
+				else
+				{
+					velocityUnits2 = "m/s";
+				}
+
+				// Update the series result
+				int totalShots = series->muzzleVelocities.size();
+				int velocityMin = *std::min_element(series->muzzleVelocities.begin(), series->muzzleVelocities.end());
+				int velocityMax = *std::max_element(series->muzzleVelocities.begin(), series->muzzleVelocities.end());
+				series->result->setText(QString("%1 shot%2, %3-%4 %5").arg(totalShots).arg(totalShots > 1 ? "s" : "").arg(velocityMin).arg(velocityMax).arg(velocityUnits2));
+
+				break;
+			}
+		}
+	}
+	else
+	{
+		qDebug() << "User cancelled dialog";
+	}
+}
+
+void PowderTest::deleteClicked ( bool state )
+{
+	QPushButton *deleteButton = qobject_cast<QPushButton *>(sender());
+
+	qDebug() << "deleteClicked state =" << state;
+
+	int newSeriesNum = -1;
+
+	// We have the checkbox object, now locate its row in the grid
+	for ( int i = 0; i < seriesData.size(); i++ )
+	{
+		ChronoSeries *series = seriesData.at(i);
+		if ( deleteButton == series->deleteButton )
+		{
+			qDebug() << "Series" << series->seriesNum << "(" << series->name->text() << ") was deleted";
+
+			series->deleted = true;
+
+			series->enabled->hide();
+			series->name->hide();
+			series->chargeWeight->hide();
+			series->result->hide();
+			series->enterDataButton->hide();
+			series->deleteButton->hide();
+
+			newSeriesNum = series->seriesNum;
+		}
+		else if ( (! series->deleted) && newSeriesNum > 0 )
+		{
+			qDebug() << "Updating Series" << series->seriesNum << "to Series" << newSeriesNum;
+
+			series->seriesNum = newSeriesNum;
+			series->name->setText(QString("Series %1").arg(newSeriesNum));
+
+			newSeriesNum++;
+		}
+	}
+}
+
+void PowderTest::manualDataEntry ( bool state )
+{
+	qDebug() << "manualDataEntry state =" << state;
+
+	// If we already have series data displayed, clear it out first. This call is a no-op if scrollWidget is not already added to stackedWidget.
+	stackedWidget->removeWidget(scrollWidget);
+
+	QVBoxLayout *scrollLayout = new QVBoxLayout();
+
+	// Wrap grid in a widget to make the grid scrollable
+	QWidget *scrollAreaWidget = new QWidget();
+
+	seriesGrid = new QGridLayout(scrollAreaWidget);
+	seriesGrid->setColumnStretch(0, 0);
+	seriesGrid->setColumnStretch(1, 1);
+	seriesGrid->setColumnStretch(2, 2);
+	seriesGrid->setColumnStretch(3, 3);
+	seriesGrid->setColumnStretch(4, 3);
+	seriesGrid->setColumnStretch(5, 3);
+	seriesGrid->setHorizontalSpacing(25);
+
+	scrollArea = new QScrollArea();
+	scrollArea->setWidget(scrollAreaWidget);
+	scrollArea->setWidgetResizable(true);
+
+	scrollLayout->addWidget(scrollArea);
+
+	/* Create utilities toolbar under scroll area */
+
+	addNewButton = new QPushButton("Add new series");
+	addNewButton->setStyleSheet("font-weight: bold");
+	connect(addNewButton, SIGNAL(clicked(bool)), this, SLOT(addNewClicked(bool)));
+	addNewButton->setMinimumWidth(225);
+	addNewButton->setMaximumWidth(225);
+
+	QPushButton *loadNewButton = new QPushButton("Load new chronograph file");
+	connect(loadNewButton, SIGNAL(clicked(bool)), this, SLOT(loadNewChronographData(bool)));
+	loadNewButton->setMinimumWidth(225);
+	loadNewButton->setMaximumWidth(225);
+
+	QPushButton *autofillButton = new QPushButton("Auto-fill charge weights");
+	connect(autofillButton, SIGNAL(clicked(bool)), this, SLOT(autofillClicked(bool)));
+	autofillButton->setMinimumWidth(225);
+	autofillButton->setMaximumWidth(225);
+
+	QHBoxLayout *utilitiesLayout = new QHBoxLayout();
+	utilitiesLayout->addWidget(addNewButton);
+	utilitiesLayout->addWidget(loadNewButton);
+	utilitiesLayout->addWidget(autofillButton);
+
+	scrollLayout->addLayout(utilitiesLayout);
+
+	scrollWidget = new QWidget();
+	scrollWidget->setLayout(scrollLayout);
+
+	stackedWidget->addWidget(scrollWidget);
+	stackedWidget->setCurrentWidget(scrollWidget);
+
+	QCheckBox *headerCheckBox = new QCheckBox();
+	headerCheckBox->setChecked(true);
+	connect(headerCheckBox, SIGNAL(stateChanged(int)), this, SLOT(headerCheckBoxChanged(int)));
+	seriesGrid->addWidget(headerCheckBox, 0, 0);
+
+	QLabel *headerName = new QLabel("Series Name");
+	seriesGrid->addWidget(headerName, 0, 1, Qt::AlignVCenter);
+	QLabel *headerChargeWeight = new QLabel("Charge Weight");
+	seriesGrid->addWidget(headerChargeWeight, 0, 2, Qt::AlignVCenter);
+	headerResult = new QLabel("Series Result");
+	seriesGrid->addWidget(headerResult, 0, 3, Qt::AlignVCenter);
+	QLabel *headerEnterData = new QLabel("");
+	seriesGrid->addWidget(headerEnterData, 0, 4, Qt::AlignVCenter);
+	QLabel *headerDelete = new QLabel("");
+	seriesGrid->addWidget(headerDelete, 0, 5, Qt::AlignVCenter);
+
+	// Only connect this signal for manual data entry
+	connect(velocityUnits, SIGNAL(activated(int)), this, SLOT(velocityUnitsChanged(int)));
+
+	/* Create initial row */
+
+	ChronoSeries *series = new ChronoSeries();
+
+	series->deleted = false;
+
+	series->enabled = new QCheckBox();
+	series->enabled->setChecked(true);
+
+	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesManualCheckBoxChanged(int)));
+	seriesGrid->addWidget(series->enabled, 1, 0);
+
+	series->seriesNum = 1;
+
+	series->name = new QLabel("Series 1");
+	seriesGrid->addWidget(series->name, 1, 1);
+
+	series->chargeWeight = new QDoubleSpinBox();
+	series->chargeWeight->setDecimals(2);
+	series->chargeWeight->setSingleStep(0.1);
+	series->chargeWeight->setMinimumWidth(100);
+	series->chargeWeight->setMaximumWidth(100);
+	seriesGrid->addWidget(series->chargeWeight, 1, 2);
+
+	const char *velocityUnits2;
+	if ( velocityUnits->currentIndex() == FPS )
+	{
+		velocityUnits2 = "fps";
+	}
+	else
+	{
+		velocityUnits2 = "m/s";
+	}
+
+	series->result = new QLabel(QString("0 shots, 0-0 %1").arg(velocityUnits2));
+	seriesGrid->addWidget(series->result, 1, 3, Qt::AlignVCenter);
+
+	series->enterDataButton = new QPushButton("Enter velocity data");
+	connect(series->enterDataButton, SIGNAL(clicked(bool)), this, SLOT(enterDataClicked(bool)));
+	series->enterDataButton->setFixedSize(series->enterDataButton->minimumSizeHint());
+	seriesGrid->addWidget(series->enterDataButton, 1, 4, Qt::AlignLeft);
+
+	series->deleteButton = new QPushButton();
+	connect(series->deleteButton, SIGNAL(clicked(bool)), this, SLOT(deleteClicked(bool)));
+	series->deleteButton->setIcon(style()->standardIcon(QStyle::SP_DialogCancelButton));
+	series->deleteButton->setFixedSize(series->deleteButton->minimumSizeHint());
+	seriesGrid->addWidget(series->deleteButton, 1, 5, Qt::AlignLeft);
+
+	seriesGrid->setRowMinimumHeight(0, series->chargeWeight->sizeHint().height());
+
+	seriesData.append(series);
+
+	// Add an empty stretch row at the end for proper spacing
+	seriesGrid->setRowStretch(seriesGrid->rowCount(), 1);
 }
 
 void PowderTest::showGraph ( bool state )
@@ -949,16 +1375,27 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 	for ( int i = 0; i < seriesData.size(); i++ )
 	{
 		ChronoSeries *series = seriesData.at(i);
-		if ( series->enabled->isChecked() )
+		if ( (! series->deleted) && series->enabled->isChecked() )
 		{
 			numEnabled += 1;
 			if ( series->chargeWeight->value() == 0 )
 			{
-				qDebug() << series->name << "is missing charge weight, bailing";
+				qDebug() << series->name->text() << "is missing charge weight, bailing";
 
 				QMessageBox *msg = new QMessageBox();
 				msg->setIcon(QMessageBox::Critical);
-				msg->setText(QString("'%1' is missing charge weight!").arg(series->name));
+				msg->setText(QString("'%1' is missing charge weight!").arg(series->name->text()));
+				msg->setWindowTitle("Error");
+				msg->exec();
+				return;
+			}
+			else if ( series->muzzleVelocities.size() == 0 )
+			{
+				qDebug() << series->name->text() << "is missing velocities, bailing";
+
+				QMessageBox *msg = new QMessageBox();
+				msg->setIcon(QMessageBox::Critical);
+				msg->setText(QString("'%1' is missing velocities!").arg(series->name->text()));
 				msg->setWindowTitle("Error");
 				msg->exec();
 				return;
@@ -990,7 +1427,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 	{
 		ChronoSeries *series = seriesData.at(i);
 
-		if ( series->enabled->isChecked() )
+		if ( (! series->deleted) && series->enabled->isChecked() )
 		{
 			seriesToGraph.append(series);
 		}
@@ -1467,7 +1904,17 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 			qDebug() << "error, shouldn't be reached";
 			res = false;
 		}
-		qDebug() << res;
+
+		qDebug() << "save file res =" << res;
+
+		if ( res )
+		{
+			QMessageBox::information(this, "Save file", QString("Saved file to '%1'").arg(path), QMessageBox::Ok, QMessageBox::Ok);
+		}
+		if ( res == false )
+		{
+			QMessageBox::warning(this, "Save file", QString("Unable to save file to '%1'\n\nPlease choose a different path").arg(path), QMessageBox::Ok, QMessageBox::Ok);
+		}
 	}
 }
 
@@ -1475,12 +1922,13 @@ void PowderTest::seriesCheckBoxChanged ( int state )
 {
 	QCheckBox *checkBox = qobject_cast<QCheckBox *>(sender());
 
-	qDebug() << "seriesCheckBoxChanged state =" << state;
+	qDebug() << "seriesCheckBoxChanged state =" << state << " checkBox =" << checkBox;
 
 	// We have the checkbox object, now locate its row in the grid
 	for ( int i = 0; i < seriesGrid->rowCount() - 1; i++ )
 	{
 		QWidget *rowCheckBox = seriesGrid->itemAtPosition(i, 0)->widget();
+
 		if ( checkBox == rowCheckBox )
 		{
 			QWidget *seriesName = seriesGrid->itemAtPosition(i, 1)->widget();
@@ -1495,7 +1943,7 @@ void PowderTest::seriesCheckBoxChanged ( int state )
 				seriesName->setStyleSheet("");
 				chargeWeight->setEnabled(true);
 				seriesResult->setStyleSheet("");
-				seriesDate->setStyleSheet("");
+				seriesDate->setEnabled(true);
 			}
 			else
 			{
@@ -1504,7 +1952,52 @@ void PowderTest::seriesCheckBoxChanged ( int state )
 				seriesName->setStyleSheet("color: #878787");
 				chargeWeight->setEnabled(false);
 				seriesResult->setStyleSheet("color: #878787");
-				seriesDate->setStyleSheet("color: #878787");
+				seriesDate->setEnabled(false);
+			}
+
+			return;
+		}
+	}
+}
+
+void PowderTest::seriesManualCheckBoxChanged ( int state )
+{
+	QCheckBox *checkBox = qobject_cast<QCheckBox *>(sender());
+
+	qDebug() << "seriesManualCheckBoxChanged state =" << state << " checkBox =" << checkBox;
+
+	// We have the checkbox object, now locate its row in the grid
+	for ( int i = 0; i < seriesGrid->rowCount() - 1; i++ )
+	{
+		QWidget *rowCheckBox = seriesGrid->itemAtPosition(i, 0)->widget();
+
+		if ( checkBox == rowCheckBox )
+		{
+			QWidget *seriesName = seriesGrid->itemAtPosition(i, 1)->widget();
+			QWidget *chargeWeight = seriesGrid->itemAtPosition(i, 2)->widget();
+			QWidget *seriesResult = seriesGrid->itemAtPosition(i, 3)->widget();
+			QWidget *seriesEnterData = seriesGrid->itemAtPosition(i, 4)->widget();
+			QWidget *seriesDelete = seriesGrid->itemAtPosition(i, 5)->widget();
+
+			if ( checkBox->isChecked() )
+			{
+				qDebug() << "Grid row" << i << "was checked";
+
+				seriesName->setStyleSheet("");
+				chargeWeight->setEnabled(true);
+				seriesResult->setStyleSheet("");
+				seriesEnterData->setEnabled(true);
+				seriesDelete->setEnabled(true);
+			}
+			else
+			{
+				qDebug() << "Grid row" << i << "was unchecked";
+
+				seriesName->setStyleSheet("color: #878787");
+				chargeWeight->setEnabled(false);
+				seriesResult->setStyleSheet("color: #878787");
+				seriesEnterData->setEnabled(false);
+				seriesDelete->setEnabled(false);
 			}
 
 			return;
@@ -1534,6 +2027,48 @@ void PowderTest::headerCheckBoxChanged ( int state )
 		{
 			QCheckBox *checkBox = qobject_cast<QCheckBox *>(seriesGrid->itemAtPosition(i, 0)->widget());
 			checkBox->setChecked(false);
+		}
+	}
+}
+
+void PowderTest::velocityUnitsChanged ( int index )
+{
+	qDebug() << "velocityUnitsChanged index =" << index;
+
+	/*
+	 * This signal handler is only connected in manual data entry mode. When the velocity unit is changed, we
+	 * need to iterate through and update every Series Result row to display the new unit.
+	 */
+
+	const char *velocityUnit;
+
+	if ( index == FPS )
+	{
+		velocityUnit = "fps";
+	}
+	else
+	{
+		velocityUnit = "m/s";
+	}
+
+	for ( int i = 0; i < seriesData.size(); i++ )
+	{
+		ChronoSeries *series = seriesData.at(i);
+		if ( ! series->deleted )
+		{
+			qDebug() << "Setting series" << i << "velocity unit to" << velocityUnit;
+
+			if ( series->muzzleVelocities.size() == 0 )
+			{
+				series->result->setText(QString("0 shots, 0-0 %1").arg(velocityUnit));
+			}
+			else
+			{
+				int totalShots = series->muzzleVelocities.size();
+				int velocityMin = *std::min_element(series->muzzleVelocities.begin(), series->muzzleVelocities.end());
+				int velocityMax = *std::max_element(series->muzzleVelocities.begin(), series->muzzleVelocities.end());
+				series->result->setText(QString("%1 shot%2, %3-%4 %5").arg(totalShots).arg(totalShots > 1 ? "s" : "").arg(velocityMin).arg(velocityMax).arg(velocityUnit));
+			}
 		}
 	}
 }
@@ -1586,6 +2121,32 @@ void PowderTest::optionCheckBoxChanged ( QCheckBox *checkBox, QLabel *label, QCo
 		qDebug() << "checkbox was unchecked";
 		label->setStyleSheet("color: #878787");
 		comboBox->setEnabled(false);
+	}
+}
+
+void PowderTest::loadNewChronographData ( bool state )
+{
+	qDebug() << "loadNewChronographData state =" << state;
+
+	QMessageBox::StandardButton reply;
+	reply = QMessageBox::question(this, "Load new data", "Are you sure you want to load new chronograph data?\n\nThis will clear your current work.", QMessageBox::Yes | QMessageBox::Cancel);
+
+	if ( reply == QMessageBox::Yes )
+	{
+		qDebug() << "User said yes";
+
+		// Hide the chronograph data screen. This returns to the initial screen to choose a new chronograph file.
+		stackedWidget->removeWidget(scrollWidget);
+
+		// Delete the loaded chronograph data
+		seriesData.clear();
+
+		// Disconnect the velocity units header signal (used in manual data entry), if necessary
+		disconnect(velocityUnits, SIGNAL(activated(int)), this, SLOT(velocityUnitsChanged(int)));
+	}
+	else
+	{
+		qDebug() << "User said cancel";
 	}
 }
 
@@ -1670,7 +2231,7 @@ void PowderTest::selectLabRadarDirectory ( bool state )
 			series->enabled = new QCheckBox();
 			series->enabled->setChecked(true);
 
-			series->name = fileName;
+			series->name = new QLabel(fileName);
 
 			series->chargeWeight = new QDoubleSpinBox();
 			series->chargeWeight->setDecimals(2);
@@ -1715,6 +2276,7 @@ ChronoSeries *PowderTest::ExtractLabRadarSeries ( QTextStream &csv )
 {
 	ChronoSeries *series = new ChronoSeries();
 	series->isValid = false;
+	series->deleted = false;
 	series->seriesNum = -1;
 
 	while ( ! csv.atEnd() )
@@ -1867,6 +2429,7 @@ QList<ChronoSeries *> PowderTest::ExtractMagnetoSpeedSeries ( QTextStream &csv )
 	QList<ChronoSeries *> allSeries;
 	ChronoSeries *curSeries = new ChronoSeries();
 	curSeries->isValid = false;
+	curSeries->deleted = false;
 	curSeries->seriesNum = -1;
 
 	int i = 0;
@@ -1918,12 +2481,13 @@ QList<ChronoSeries *> PowderTest::ExtractMagnetoSpeedSeries ( QTextStream &csv )
 
 				curSeries = new ChronoSeries();
 				curSeries->isValid = false;
+				curSeries->deleted = false;
 				curSeries->seriesNum = -1;
 			}
 			else if ( (rows.at(0).compare("Series") == 0) && (rows.at(2) == "Shots:") )
 			{
 				curSeries->seriesNum = rows.at(1).toInt();
-				curSeries->name = QString("Series %1").arg(rows.at(1).toInt());
+				curSeries->name = new QLabel(QString("Series %1").arg(rows.at(1).toInt()));
 				qDebug() << "seriesNum =" << curSeries->seriesNum;
 			}
 			else
@@ -1947,6 +2511,210 @@ QList<ChronoSeries *> PowderTest::ExtractMagnetoSpeedSeries ( QTextStream &csv )
 		}
 
 		i++;
+	}
+
+	return allSeries;
+}
+
+void PowderTest::selectProChronoFile ( bool state )
+{
+	qDebug() << "selectProChronoFile state =" << state;
+
+	qDebug() << "Previous directory:" << prevProChronoDir;
+
+	QString path = QFileDialog::getOpenFileName(this, "Select file", prevProChronoDir, "CSV files (*.csv)");
+	prevProChronoDir = path;
+
+	qDebug() << "Selected file:" << path;
+
+	if ( path.isEmpty() )
+	{
+		qDebug() << "User didn't select a file, bail";
+		return;
+	}
+
+	seriesData.clear();
+
+	/*
+	 * ProChrono records all of its series data in a single .CSV file
+	 */
+
+	QFile csvFile(path);
+	csvFile.open(QIODevice::ReadOnly);
+	QTextStream csv(&csvFile);
+
+	QList<ChronoSeries *> allSeries = ExtractProChronoSeries(csv);
+
+	qDebug() << "Got allSeries from ExtractProChronoSeries with size" << allSeries.size();
+
+	if ( ! allSeries.empty() )
+	{
+		qDebug() << "Detected ProChrono file";
+
+		for ( int i = 0; i < allSeries.size(); i++ )
+		{
+			ChronoSeries *series = allSeries.at(i);
+
+			series->enabled = new QCheckBox();
+			series->enabled->setChecked(true);
+
+			series->chargeWeight = new QDoubleSpinBox();
+			series->chargeWeight->setDecimals(2);
+			series->chargeWeight->setSingleStep(0.1);
+			series->chargeWeight->setMinimumWidth(100);
+			series->chargeWeight->setMaximumWidth(100);
+
+			seriesData.append(series);
+		}
+	}
+
+	csvFile.close();
+
+	/* We're finished parsing the file */
+
+	if ( seriesData.empty() )
+	{
+		qDebug() << "Didn't find any chrono data in this file, bail";
+
+		QMessageBox *msg = new QMessageBox();
+		msg->setIcon(QMessageBox::Critical);
+		msg->setText(QString("Unable to find ProChrono data in '%1'").arg(path));
+		msg->setWindowTitle("Error");
+		msg->exec();
+	}
+	else
+	{
+		qDebug() << "Detected ProChrono file" << path;
+
+		QMessageBox *msg = new QMessageBox();
+		msg->setIcon(QMessageBox::Information);
+		msg->setText(QString("Detected ProChrono data\n\nUsing '%1'").arg(path));
+		msg->setWindowTitle("Success");
+		msg->exec();
+
+		// Proceed to display the data
+		DisplaySeriesData();
+	}
+}
+
+QList<ChronoSeries *> PowderTest::ExtractProChronoSeries ( QTextStream &csv )
+{
+	QList<ChronoSeries *> allSeries;
+	ChronoSeries *curSeries = new ChronoSeries();
+	curSeries->isValid = false;
+	curSeries->deleted = false;
+	curSeries->seriesNum = -1;
+
+	int i = 0;
+	while ( ! csv.atEnd() )
+	{
+		QString line = csv.readLine();
+
+		// ProChrono uses comma (,) as delimeter
+		QStringList rows(line.split(","));
+
+		// Trim whitespace from cells
+		QMutableStringListIterator it(rows);
+		while ( it.hasNext() )
+		{
+			it.next();
+			it.setValue(it.value().trimmed());
+		}
+
+		qDebug() << "Line" << i << ":" << rows;
+
+		// Validate the first row header
+		if ( i == 0 )
+		{
+			if ( (rows.size() >= 9) && (rows.at(0) == "Shot List") && (rows.at(1) == "Index") && (rows.at(2) == "Velocity") )
+			{
+				qDebug() << "Found the ProChrono header";
+			}
+			else
+			{
+				qDebug() << "File doesn't have the ProChrono header, bailing";
+				return allSeries;
+			}
+		}
+
+		if ( rows.size() >= 3 )
+		{
+			if ( rows.at(0) == "Shot List" )
+			{
+				// skip column headers
+				qDebug() << "Skipping column headers";
+			}
+			else
+			{
+				bool ok = false;
+				int index = rows.at(1).toInt(&ok);
+
+				// If cell is a valid integer, the row is a shot entry
+				if ( ok )
+				{
+					if ( index == 1 )
+					{
+						 // First shot in the series. End the previous series (if necessary) and start a new one.
+
+						if ( curSeries->muzzleVelocities.size() > 0 )
+						{
+							qDebug() << "Adding curSeries to allSeries";
+
+							allSeries.append(curSeries);
+						}
+
+						qDebug() << "Beginning new series";
+
+						curSeries = new ChronoSeries();
+						curSeries->isValid = true;
+						curSeries->seriesNum = -1;
+						curSeries->name = new QLabel(rows.at(0));
+						curSeries->velocityUnits = "ft/s";
+					}
+
+					if ( curSeries->firstDate.isNull() && (rows.size() >= 9) )
+					{
+						QStringList dateTime = rows.at(8).split(" ");
+						if ( dateTime.size() == 2 )
+						{
+							curSeries->firstDate = dateTime.at(0);
+							curSeries->firstTime = dateTime.at(1);
+							qDebug() << "firstDate =" << curSeries->firstDate;
+							qDebug() << "firstTime =" << curSeries->firstTime;
+						}
+						else
+						{
+							qDebug() << "Failed to split datetime cell:" << rows.at(8);
+						}
+					}
+
+					curSeries->muzzleVelocities.append(rows.at(2).toInt());
+					qDebug() << "muzzleVelocities +=" << rows.at(2).toInt();
+				}
+			}
+		}
+
+		i++;
+	}
+
+	// End of the file. Finish parsing the current series.
+	qDebug() << "End of file";
+
+	if ( curSeries->muzzleVelocities.size() > 0 )
+	{
+		qDebug() << "Adding curSeries to allSeries";
+
+		allSeries.append(curSeries);
+	}
+
+	// ProChrono files list series in reverse order from newest to oldest. Iterate through and
+	// set the seriesNum's accordingly.
+	int seriesNum = 1;
+	for ( i = allSeries.size() - 1; i >= 0; i-- )
+	{
+		ChronoSeries *series = allSeries.at(i);
+		series->seriesNum = seriesNum;
+		seriesNum++;
 	}
 
 	return allSeries;
@@ -1990,7 +2758,7 @@ void PowderTest::rrClicked ( bool state )
 
 			newSeries->seriesNum = i;
 
-			newSeries->name = QString("Series %1").arg(i + 1);
+			newSeries->name = new QLabel(QString("Series %1").arg(i + 1));
 
 			newSeries->muzzleVelocities = newVelocs;
 
@@ -2038,7 +2806,7 @@ void PowderTest::autofillClicked ( bool state )
 		for ( int i = 0; i < seriesData.size(); i++ )
 		{
 			ChronoSeries *series = seriesData.at(i);
-			if ( series->enabled->isChecked() )
+			if ( (! series->deleted) && series->enabled->isChecked() )
 			{
 				qDebug() << "Setting series" << i << "to" << currentCharge;
 				series->chargeWeight->setValue(currentCharge);
@@ -2058,6 +2826,316 @@ void PowderTest::autofillClicked ( bool state )
 		qDebug() << "User cancelled dialog";
 	}
 }
+
+double SeatingDepthTest::calculateES ( QList<QPair<double, double> > coordinates )
+{
+	/*
+	 * There's probably a smarter/more efficient way to calculate this, but you'll
+	 * burn your barrel out before the algorithmic complexity becomes an issue.
+	 */
+
+	double extremeSpread = 0;
+
+	int i;
+	for ( i = 0; i < coordinates.size(); i++ )
+	{
+		QPair<double, double> coord1 = coordinates.at(i);
+		//qDebug() << "Iter" << i;
+
+		int j;
+		for ( j = i + 1; j < coordinates.size(); j++ )
+		{
+			QPair<double, double> coord2 = coordinates.at(j);
+			double es = sqrt( pow((coord2.first - coord1.first), 2) + pow(coord2.second - coord2.second, 2) );
+
+			//qDebug() << "Calculated ES =" << es << "for coords" << coord1 << coord2;
+
+			if ( es > extremeSpread )
+			{
+				extremeSpread = es;
+				//qDebug() << "Updated ES to" << extremeSpread;
+			}
+		}
+	}
+
+	return extremeSpread;
+}
+
+double sampleStdev ( QList<double> vals )
+{
+	int totalShots = vals.size();
+	double mean = std::accumulate(vals.begin(), vals.end(), 0LL) / static_cast<double>(totalShots);
+
+	double temp = 0;
+	for ( int i = 0; i < totalShots; i++ )
+	{
+		double val = vals.at(i);
+		temp += pow(val - mean, 2);
+	}
+
+	// subtract 1 in denominator for sample variance
+	return std::sqrt(temp / (totalShots - 1));
+}
+
+double SeatingDepthTest::calculateRSD ( QList<QPair<double, double> > coordinates )
+{
+	QList<double> xCoords;
+	QList<double> yCoords;
+	for ( int i = 0; i < coordinates.size(); i++ )
+	{
+		xCoords.append(coordinates.at(i).first);
+		yCoords.append(coordinates.at(i).second);
+	}
+
+	double radialStdev = sqrt( pow(sampleStdev(xCoords), 2) + pow(sampleStdev(yCoords), 2) );
+
+	return radialStdev;
+}
+
+double SeatingDepthTest::pairSumX ( double lhs, const QPair<double, double> rhs )
+{
+	return lhs + rhs.first;
+}
+
+double SeatingDepthTest::pairSumY ( double lhs, const QPair<double, double> rhs )
+{
+	return lhs + rhs.second;
+}
+
+double SeatingDepthTest::calculateMR ( QList<QPair<double, double> > coordinates )
+{
+	double meanRadius = 0;
+
+	int totalShots = coordinates.size();
+	double xMean = std::accumulate(coordinates.begin(), coordinates.end(), 0.0, pairSumX) / static_cast<double>(totalShots);
+	double yMean = std::accumulate(coordinates.begin(), coordinates.end(), 0.0, pairSumY) / static_cast<double>(totalShots);
+
+	QList<double> r;
+	int i;
+	for ( i = 0; i < coordinates.size(); i++ )
+	{
+		r.append(sqrt( pow((coordinates.at(i).first - xMean), 2) + pow((coordinates.at(i).second - yMean), 2) ));
+	}
+
+	meanRadius = std::accumulate(r.begin(), r.end(), 0.0) / static_cast<double>(totalShots);
+
+	return meanRadius;
+}
+
+void SeatingDepthTest::selectShotMarkerFile ( bool state )
+{
+	qDebug() << "selectShotMarkerFile state =" << state;
+
+	qDebug() << "Previous directory:" << prevShotMarkerDir;
+
+	QString path = QFileDialog::getOpenFileName(this, "Select file", prevShotMarkerDir, "CSV files (*.csv)");
+	prevShotMarkerDir = path;
+
+	qDebug() << "Selected file:" << path;
+
+	if ( path.isEmpty() )
+	{
+		qDebug() << "User didn't select a file, bail";
+		return;
+	}
+
+	seatingSeriesData.clear();
+
+	/*
+	 * ShotMarker records all of its series data in a single .CSV file
+	 */
+
+	QFile csvFile(path);
+	csvFile.open(QIODevice::ReadOnly);
+	QTextStream csv(&csvFile);
+
+	QList<SeatingSeries *> allSeries = ExtractShotMarkerSeries(csv);
+
+	qDebug() << "Got allSeries from ExtractShotMarkerSeries with size" << allSeries.size();
+
+	if ( ! allSeries.empty() )
+	{
+		qDebug() << "Detected ShotMarker file";
+
+		for ( int i = 0; i < allSeries.size(); i++ )
+		{
+			SeatingSeries *series = allSeries.at(i);
+
+			series->enabled = new QCheckBox();
+			series->enabled->setChecked(true);
+
+			series->cartridgeLength = new QDoubleSpinBox();
+			series->cartridgeLength->setDecimals(3);
+			series->cartridgeLength->setSingleStep(0.001);
+			series->cartridgeLength->setMinimumWidth(100);
+			series->cartridgeLength->setMaximumWidth(100);
+
+			series->extremeSpread = calculateES(series->coordinates);
+			series->radialStdev = calculateRSD(series->coordinates);
+			series->meanRadius = calculateMR(series->coordinates);
+
+			/*
+			 * To keep things simple, we default to inches for group size when loading ShotMarker data. We
+			 * restrict the options to inches and centimeters, as well, to keep things from getting too
+			 * complex. MOA and mils aren't useful without a target distance, which technically is recorded
+			 * in the .CSV, but often enough that number is incorrect or never changed.
+			 */
+
+			//QLabel *groupSizeLabel = new QLabel(QString("%1 shot%2, %3 %4").arg(totalShots).arg(totalShots > 1 ? "s" : "").arg(groupSize).arg(velocityMax).arg(series->velocityUnits));
+
+			if ( groupMeasurementType->currentIndex() == ES )
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 in").arg(series->extremeSpread));
+			}
+			else if ( groupMeasurementType->currentIndex() == RSD )
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 in").arg(series->radialStdev));
+			}
+			else
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 in").arg(series->meanRadius));
+			}
+
+			qDebug() << "Series '" << series->name->text() << "' has ES" << series->extremeSpread << ", RSD" << series->radialStdev << ", and MR" << series->meanRadius;
+
+			seatingSeriesData.append(series);
+		}
+	}
+
+	csvFile.close();
+
+	/* We're finished parsing the file */
+
+	if ( seatingSeriesData.empty() )
+	{
+		qDebug() << "Didn't find any shot data in this file, bail";
+
+		QMessageBox *msg = new QMessageBox();
+		msg->setIcon(QMessageBox::Critical);
+		msg->setText(QString("Unable to find ShotMarker data in '%1'").arg(path));
+		msg->setWindowTitle("Error");
+		msg->exec();
+	}
+	else
+	{
+		qDebug() << "Detected ShotMarker file" << path;
+
+		QMessageBox *msg = new QMessageBox();
+		msg->setIcon(QMessageBox::Information);
+		msg->setText(QString("Detected ShotMarker data\n\nUsing '%1'").arg(path));
+		msg->setWindowTitle("Success");
+		msg->exec();
+
+		// Proceed to display the data
+		DisplaySeriesData();
+	}
+}
+
+QList<SeatingSeries *> SeatingDepthTest::ExtractShotMarkerSeries ( QTextStream &csv )
+{
+	QList<SeatingSeries *> allSeries;
+	SeatingSeries *curSeries = new SeatingSeries();
+	curSeries->isValid = false;
+	curSeries->deleted = false;
+	curSeries->seriesNum = -1;
+
+	int i = 0;
+	int seriesNum = 1;
+	while ( ! csv.atEnd() )
+	{
+		QString line = csv.readLine();
+
+		// ShotMarker uses comma (,) as delimeter
+		QStringList rows(line.split(","));
+
+		// Trim whitespace from cells
+		QMutableStringListIterator it(rows);
+		while ( it.hasNext() )
+		{
+			it.next();
+			it.setValue(it.value().trimmed());
+		}
+
+		qDebug() << "Line" << i << ":" << rows;
+
+		// Validate the first row header
+		if ( i == 0 )
+		{
+			if ( (rows.size() >= 1) && (rows.at(0).contains("ShotMarker Archived Data")) )
+			{
+				qDebug() << "Found the ShotMarker header";
+			}
+			else
+			{
+				qDebug() << "File doesn't have the ShotMarker header, bailing";
+				return allSeries;
+			}
+		}
+
+		if ( rows.size() >= 5 )
+		{
+			// Check if first cell is a date, signifying the beginning of a new series
+			QDate seriesDate;
+			seriesDate = QDate::fromString(rows.at(0), "MMM dd yyyy"); // XXX need to figure out if SM uses full or abbreviated month names
+			if ( seriesDate.isValid() )
+			{
+				 // End the previous series (if necessary) and start a new one
+
+				if ( curSeries->coordinates.size() > 0 )
+				{
+					qDebug() << "Adding curSeries to allSeries";
+
+					allSeries.append(curSeries);
+				}
+
+				qDebug() << "Beginning new series";
+
+				curSeries = new SeatingSeries();
+				curSeries->isValid = false;
+				curSeries->seriesNum = seriesNum;
+				curSeries->name = new QLabel(rows.at(1));
+				curSeries->deleted = false;
+				curSeries->firstDate = rows.at(0);
+
+				seriesNum++;
+			}
+			else if ( rows.size() >= 17 )
+			{
+				// This is either a row containing headers, shot data, or avg/SD summary data
+
+				QTime seriesTime;
+				seriesTime = QTime::fromString(rows.at(1), "hh:mm:ss ap");
+				if ( seriesTime.isValid() )
+				{
+					// Rows with a time in the second cell are shot data
+
+					qDebug() << "adding coords" << QPair<double,double>(rows.at(7).toDouble(), rows.at(8).toDouble());
+
+					curSeries->coordinates.append(QPair<double,double>(rows.at(7).toDouble(), rows.at(8).toDouble()));
+				}
+			}
+		}
+		else
+		{
+			qDebug() << "Skipping line";
+		}
+
+		i++;
+	}
+
+	// End of the file. Finish parsing the current series.
+	qDebug() << "End of file";
+
+	if ( curSeries->coordinates.size() > 0 )
+	{
+		qDebug() << "Adding curSeries to allSeries";
+
+		allSeries.append(curSeries);
+	}
+
+	return allSeries;
+}
+
 
 void SeatingDepthTest::autofillClicked ( bool state )
 {
@@ -2210,112 +3288,56 @@ SeatingDepthTest::SeatingDepthTest ( QWidget *parent )
 {
 	qDebug() << "Seating depth test";
 
-	/* Left panel */
-
 	graphPreview = NULL;
-	prevSaveDir = "";
+	prevShotMarkerDir = QDir::homePath();
+	prevSaveDir = QDir::homePath();
+
+	/* Left panel */
 
 	QVBoxLayout *leftLayout = new QVBoxLayout();
 
-	// Wrap grid in a widget to make the grid scrollable
-	QWidget *scrollAreaWidget = new QWidget();
+	QLabel *selectLabel = new QLabel("Select input type\nto populate series data\n");
+	selectLabel->setAlignment(Qt::AlignCenter);
 
-	seatingSeriesGrid = new QGridLayout(scrollAreaWidget);
-	seatingSeriesGrid->setColumnStretch(0, 0);
-	seatingSeriesGrid->setColumnStretch(1, 1);
-	seatingSeriesGrid->setColumnStretch(2, 2);
-	seatingSeriesGrid->setColumnStretch(3, 2);
-	seatingSeriesGrid->setColumnStretch(4, 3);
-	seatingSeriesGrid->setHorizontalSpacing(25);
+	QPushButton *smFileButton = new QPushButton("Select ShotMarker file");
+	connect(smFileButton, SIGNAL(clicked(bool)), this, SLOT(selectShotMarkerFile(bool)));
+	smFileButton->setMinimumWidth(300);
+	smFileButton->setMaximumWidth(300);
+	smFileButton->setMinimumHeight(50);
+	smFileButton->setMaximumHeight(50);
 
-	QCheckBox *headerCheckBox = new QCheckBox();
-	headerCheckBox->setChecked(true);
-	connect(headerCheckBox, SIGNAL(stateChanged(int)), this, SLOT(headerCheckBoxChanged(int)));
-	seatingSeriesGrid->addWidget(headerCheckBox, 0, 0);
+	QPushButton *manualEntryButton = new QPushButton("Manual data entry");
+	connect(manualEntryButton, SIGNAL(clicked(bool)), this, SLOT(manualDataEntry(bool)));
+	manualEntryButton->setMinimumWidth(300);
+	manualEntryButton->setMaximumWidth(300);
+	manualEntryButton->setMinimumHeight(50);
+	manualEntryButton->setMaximumHeight(50);
 
-	/* Headers for series data */
+	QVBoxLayout *placeholderLayout = new QVBoxLayout();
+	placeholderLayout->addStretch(0);
+	placeholderLayout->addWidget(selectLabel);
+	placeholderLayout->setAlignment(selectLabel, Qt::AlignCenter);
+	placeholderLayout->addWidget(smFileButton);
+	placeholderLayout->setAlignment(smFileButton, Qt::AlignCenter);
+	placeholderLayout->addWidget(manualEntryButton);
+	placeholderLayout->setAlignment(manualEntryButton, Qt::AlignCenter);
+	placeholderLayout->addStretch(0);
 
-	QLabel *headerNumber = new QLabel("Series Name");
-	seatingSeriesGrid->addWidget(headerNumber, 0, 1, Qt::AlignVCenter);
-	headerLengthType = new QLabel("CBTO");
-	seatingSeriesGrid->addWidget(headerLengthType, 0, 2, Qt::AlignVCenter);
-	headerGroupType = new QLabel("Group Size (ES)");
-	seatingSeriesGrid->addWidget(headerGroupType, 0, 3, Qt::AlignVCenter);
-	QLabel *headerDelete = new QLabel("");
-	seatingSeriesGrid->addWidget(headerDelete, 0, 4, Qt::AlignVCenter);
+	QWidget *placeholderWidget = new QWidget();
+	placeholderWidget->setLayout(placeholderLayout);
 
-	scrollArea = new QScrollArea();
-	scrollArea->setWidget(scrollAreaWidget);
-	scrollArea->setWidgetResizable(true);
+	stackedWidget = new QStackedWidget();
+	stackedWidget->addWidget(placeholderWidget);
+	stackedWidget->setCurrentIndex(0);
 
-	scrollLayout = new QVBoxLayout();
-	scrollLayout->addWidget(scrollArea);
-
-	addNewButton = new QPushButton("Add new group");
-	addNewButton->setStyleSheet("font-weight: bold");
-	connect(addNewButton, SIGNAL(clicked(bool)), this, SLOT(addNewClicked(bool)));
-	addNewButton->setMinimumWidth(225);
-	addNewButton->setMaximumWidth(225);
-
-	QPushButton *autofillButton = new QPushButton("Auto-fill cartridge lengths");
-	connect(autofillButton, SIGNAL(clicked(bool)), this, SLOT(autofillClicked(bool)));
-	autofillButton->setMinimumWidth(225);
-	autofillButton->setMaximumWidth(225);
-
-	QHBoxLayout *utilitiesLayout = new QHBoxLayout();
-	utilitiesLayout->addWidget(addNewButton);
-	utilitiesLayout->addWidget(autofillButton);
-
-	scrollLayout->addLayout(utilitiesLayout);
-
+	QVBoxLayout *stackedLayout = new QVBoxLayout();
+	stackedLayout->addWidget(stackedWidget);
 	QGroupBox *seatingGroupBox = new QGroupBox("Seating depth data:");
-	seatingGroupBox->setLayout(scrollLayout);
+	seatingGroupBox->setLayout(stackedLayout);
 
 	leftLayout->addWidget(seatingGroupBox);
 
-	/* Create initial row */
-
-	SeatingSeries *series = new SeatingSeries();
-
-	series->deleted = false;
-
-	series->enabled = new QCheckBox();
-	series->enabled->setChecked(true);
-
-	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesCheckBoxChanged(int)));
-	seatingSeriesGrid->addWidget(series->enabled, 1, 0);
-
-	series->seriesNum = 1;
-
-	series->name = new QLabel("Series 1");
-	seatingSeriesGrid->addWidget(series->name, 1, 1);
-
-	series->cartridgeLength = new QDoubleSpinBox();
-	series->cartridgeLength->setDecimals(3);
-	series->cartridgeLength->setSingleStep(0.001);
-	series->cartridgeLength->setMinimumWidth(100);
-	series->cartridgeLength->setMaximumWidth(100);
-	seatingSeriesGrid->addWidget(series->cartridgeLength, 1, 2);
-
-	series->groupSize = new QDoubleSpinBox();
-	series->groupSize->setDecimals(3);
-	series->groupSize->setSingleStep(0.001);
-	series->groupSize->setMinimumWidth(100);
-	series->groupSize->setMaximumWidth(100);
-	seatingSeriesGrid->addWidget(series->groupSize, 1, 3);
-
-	series->deleteButton = new QPushButton();
-	connect(series->deleteButton, SIGNAL(clicked(bool)), this, SLOT(deleteClicked(bool)));
-	series->deleteButton->setIcon(style()->standardIcon(QStyle::SP_DialogCancelButton));
-	series->deleteButton->setFixedSize(series->deleteButton->minimumSizeHint());
-	seatingSeriesGrid->addWidget(series->deleteButton, 1, 4, Qt::AlignLeft);
-
-	seatingSeriesGrid->setRowMinimumHeight(0, series->cartridgeLength->sizeHint().height());
-
-	seatingSeriesData.append(series);
-
-	// Add an empty stretch row at the end for proper spacing
-	seatingSeriesGrid->setRowStretch(seatingSeriesGrid->rowCount(), 1);
+	// XXX snip
 
 	/* Right panel */
 
@@ -2451,6 +3473,252 @@ SeatingDepthTest::SeatingDepthTest ( QWidget *parent )
 	pageLayout->addLayout(rightLayout, 0);
 
 	this->setLayout(pageLayout);
+}
+
+void SeatingDepthTest::loadNewShotData ( bool state )
+{
+	qDebug() << "loadNewShotData state =" << state;
+
+	QMessageBox::StandardButton reply;
+	reply = QMessageBox::question(this, "Load new data", "Are you sure you want to load new shot data?\n\nThis will clear your current work.", QMessageBox::Yes | QMessageBox::Cancel);
+
+	if ( reply == QMessageBox::Yes )
+	{
+		qDebug() << "User said yes";
+
+		// Hide the shot data screen. This returns to the initial screen to choose a new shot data file.
+		stackedWidget->removeWidget(scrollWidget);
+
+		// Delete the loaded shot data
+		seatingSeriesData.clear();
+
+		// Disconnect the velocity units header signal (used in manual data entry), if necessary
+		//disconnect(velocityUnits, SIGNAL(activated(int)), this, SLOT(velocityUnitsChanged(int)));
+	}
+	else
+	{
+		qDebug() << "User said cancel";
+	}
+}
+
+static bool SeatingSeriesComparator ( SeatingSeries *one, SeatingSeries *two )
+{
+	return (one->seriesNum < two->seriesNum);
+}
+
+void SeatingDepthTest::DisplaySeriesData ( void )
+{
+	// Sort the list by series number
+	std::sort(seatingSeriesData.begin(), seatingSeriesData.end(), SeatingSeriesComparator);
+
+	// If we already have series data displayed, clear it out first. This call is a no-op if scrollWidget is not already added to stackedWidget.
+	stackedWidget->removeWidget(scrollWidget);
+
+	QVBoxLayout *scrollLayout = new QVBoxLayout();
+
+	// Wrap grid in a widget to make the grid scrollable
+	QWidget *scrollAreaWidget = new QWidget();
+
+	seatingSeriesGrid = new QGridLayout(scrollAreaWidget);
+	seatingSeriesGrid->setColumnStretch(0, 0);
+	seatingSeriesGrid->setColumnStretch(1, 1);
+	seatingSeriesGrid->setColumnStretch(2, 2);
+	seatingSeriesGrid->setColumnStretch(3, 3);
+	seatingSeriesGrid->setColumnStretch(4, 3);
+	seatingSeriesGrid->setHorizontalSpacing(25);
+
+	scrollArea = new QScrollArea();
+	scrollArea->setWidget(scrollAreaWidget);
+	scrollArea->setWidgetResizable(true);
+
+	scrollLayout->addWidget(scrollArea);
+
+	/* Create utilities toolbar under scroll area */
+
+	QPushButton *loadNewButton = new QPushButton("Load new shot data file");
+	connect(loadNewButton, SIGNAL(clicked(bool)), this, SLOT(loadNewShotData(bool)));
+	loadNewButton->setMinimumWidth(225);
+	loadNewButton->setMaximumWidth(225);
+
+	QPushButton *autofillButton = new QPushButton("Auto-fill cartridge lengths");
+	connect(autofillButton, SIGNAL(clicked(bool)), this, SLOT(autofillClicked(bool)));
+	autofillButton->setMinimumWidth(225);
+	autofillButton->setMaximumWidth(225);
+
+	QHBoxLayout *utilitiesLayout = new QHBoxLayout();
+	utilitiesLayout->addWidget(loadNewButton);
+	utilitiesLayout->addWidget(autofillButton);
+
+	scrollLayout->addLayout(utilitiesLayout);
+
+	scrollWidget = new QWidget();
+	scrollWidget->setLayout(scrollLayout);
+
+	stackedWidget->addWidget(scrollWidget);
+	stackedWidget->setCurrentWidget(scrollWidget);
+
+	QCheckBox *headerCheckBox = new QCheckBox();
+	headerCheckBox->setChecked(true);
+	connect(headerCheckBox, SIGNAL(stateChanged(int)), this, SLOT(headerCheckBoxChanged(int)));
+	seatingSeriesGrid->addWidget(headerCheckBox, 0, 0);
+
+	/* Headers for series data */
+
+	QLabel *headerNumber = new QLabel("Series Name");
+	seatingSeriesGrid->addWidget(headerNumber, 0, 1, Qt::AlignVCenter);
+	headerLengthType = new QLabel("CBTO");
+	seatingSeriesGrid->addWidget(headerLengthType, 0, 2, Qt::AlignVCenter);
+	headerGroupType = new QLabel("Group Size (ES)");
+	seatingSeriesGrid->addWidget(headerGroupType, 0, 3, Qt::AlignVCenter);
+	QLabel *headerDate = new QLabel("Series Date");
+	seatingSeriesGrid->addWidget(headerDate, 0, 4, Qt::AlignVCenter);
+
+	for ( int i = 0; i < seatingSeriesData.size(); i++ )
+	{
+		SeatingSeries *series = seatingSeriesData.at(i);
+
+		connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesCheckBoxChanged(int)));
+
+		seatingSeriesGrid->addWidget(series->enabled, i + 1, 0);
+		seatingSeriesGrid->addWidget(series->name, i + 1, 1, Qt::AlignVCenter);
+
+		QHBoxLayout *cartridgeLengthLayout = new QHBoxLayout();
+		cartridgeLengthLayout->addWidget(series->cartridgeLength);
+		cartridgeLengthLayout->addStretch(0);
+		seatingSeriesGrid->addLayout(cartridgeLengthLayout, i + 1, 2);
+
+		seatingSeriesGrid->addWidget(series->groupSizeLabel, i + 1, 3, Qt::AlignVCenter);
+
+		QLabel *datetimeLabel = new QLabel(QString("%1 %2").arg(series->firstDate).arg(series->firstTime));
+		seatingSeriesGrid->addWidget(datetimeLabel, i + 1, 4, Qt::AlignVCenter);
+
+		seatingSeriesGrid->setRowMinimumHeight(0, series->cartridgeLength->sizeHint().height());
+	}
+
+	// Add an empty stretch row at the end for proper spacing
+	seatingSeriesGrid->setRowStretch(seatingSeriesData.size() + 1, 1);
+
+	scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+	scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	scrollArea->setWidgetResizable(true);
+}
+
+void SeatingDepthTest::manualDataEntry ( bool state )
+{
+	qDebug() << "manualDataEntry state =" << state;
+
+	// If we already have series data displayed, clear it out first. This call is a no-op if scrollWidget is not already added to stackedWidget.
+	stackedWidget->removeWidget(scrollWidget);
+
+	QVBoxLayout *scrollLayout = new QVBoxLayout();
+
+	// Wrap grid in a widget to make the grid scrollable
+	QWidget *scrollAreaWidget = new QWidget();
+
+	seatingSeriesGrid = new QGridLayout(scrollAreaWidget);
+	seatingSeriesGrid->setColumnStretch(0, 0);
+	seatingSeriesGrid->setColumnStretch(1, 1);
+	seatingSeriesGrid->setColumnStretch(2, 2);
+	seatingSeriesGrid->setColumnStretch(3, 2);
+	seatingSeriesGrid->setColumnStretch(4, 3);
+	seatingSeriesGrid->setHorizontalSpacing(25);
+
+	scrollArea = new QScrollArea();
+	scrollArea->setWidget(scrollAreaWidget);
+	scrollArea->setWidgetResizable(true);
+
+	scrollLayout->addWidget(scrollArea);
+
+	/* Create utilities toolbar under scroll area */
+
+	addNewButton = new QPushButton("Add new group");
+	addNewButton->setStyleSheet("font-weight: bold");
+	connect(addNewButton, SIGNAL(clicked(bool)), this, SLOT(addNewClicked(bool)));
+	addNewButton->setMinimumWidth(225);
+	addNewButton->setMaximumWidth(225);
+
+	QPushButton *loadNewButton = new QPushButton("Load new shot data file");
+	connect(loadNewButton, SIGNAL(clicked(bool)), this, SLOT(loadNewShotData(bool)));
+	loadNewButton->setMinimumWidth(225);
+	loadNewButton->setMaximumWidth(225);
+
+	QPushButton *autofillButton = new QPushButton("Auto-fill cartridge lengths");
+	connect(autofillButton, SIGNAL(clicked(bool)), this, SLOT(autofillClicked(bool)));
+	autofillButton->setMinimumWidth(225);
+	autofillButton->setMaximumWidth(225);
+
+	QHBoxLayout *utilitiesLayout = new QHBoxLayout();
+	utilitiesLayout->addWidget(addNewButton);
+	utilitiesLayout->addWidget(loadNewButton);
+	utilitiesLayout->addWidget(autofillButton);
+
+	scrollLayout->addLayout(utilitiesLayout);
+
+	scrollWidget = new QWidget();
+	scrollWidget->setLayout(scrollLayout);
+
+	stackedWidget->addWidget(scrollWidget);
+	stackedWidget->setCurrentWidget(scrollWidget);
+
+	QCheckBox *headerCheckBox = new QCheckBox();
+	headerCheckBox->setChecked(true);
+	connect(headerCheckBox, SIGNAL(stateChanged(int)), this, SLOT(headerCheckBoxChanged(int)));
+	seatingSeriesGrid->addWidget(headerCheckBox, 0, 0);
+
+	/* Headers for series data */
+
+	QLabel *headerNumber = new QLabel("Series Name");
+	seatingSeriesGrid->addWidget(headerNumber, 0, 1, Qt::AlignVCenter);
+	headerLengthType = new QLabel("CBTO");
+	seatingSeriesGrid->addWidget(headerLengthType, 0, 2, Qt::AlignVCenter);
+	headerGroupType = new QLabel("Group Size (ES)");
+	seatingSeriesGrid->addWidget(headerGroupType, 0, 3, Qt::AlignVCenter);
+	QLabel *headerDelete = new QLabel("");
+	seatingSeriesGrid->addWidget(headerDelete, 0, 4, Qt::AlignVCenter);
+
+	/* Create initial row */
+
+	SeatingSeries *series = new SeatingSeries();
+
+	series->deleted = false;
+
+	series->enabled = new QCheckBox();
+	series->enabled->setChecked(true);
+
+	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesCheckBoxChanged(int)));
+	seatingSeriesGrid->addWidget(series->enabled, 1, 0);
+
+	series->seriesNum = 1;
+
+	series->name = new QLabel("Series 1");
+	seatingSeriesGrid->addWidget(series->name, 1, 1);
+
+	series->cartridgeLength = new QDoubleSpinBox();
+	series->cartridgeLength->setDecimals(3);
+	series->cartridgeLength->setSingleStep(0.001);
+	series->cartridgeLength->setMinimumWidth(100);
+	series->cartridgeLength->setMaximumWidth(100);
+	seatingSeriesGrid->addWidget(series->cartridgeLength, 1, 2);
+
+	series->groupSize = new QDoubleSpinBox();
+	series->groupSize->setDecimals(3);
+	series->groupSize->setSingleStep(0.001);
+	series->groupSize->setMinimumWidth(100);
+	series->groupSize->setMaximumWidth(100);
+	seatingSeriesGrid->addWidget(series->groupSize, 1, 3);
+
+	series->deleteButton = new QPushButton();
+	connect(series->deleteButton, SIGNAL(clicked(bool)), this, SLOT(deleteClicked(bool)));
+	series->deleteButton->setIcon(style()->standardIcon(QStyle::SP_DialogCancelButton));
+	series->deleteButton->setFixedSize(series->deleteButton->minimumSizeHint());
+	seatingSeriesGrid->addWidget(series->deleteButton, 1, 4, Qt::AlignLeft);
+
+	seatingSeriesGrid->setRowMinimumHeight(0, series->cartridgeLength->sizeHint().height());
+
+	seatingSeriesData.append(series);
+
+	// Add an empty stretch row at the end for proper spacing
+	seatingSeriesGrid->setRowStretch(seatingSeriesGrid->rowCount(), 1);
 }
 
 void SeatingDepthTest::seriesCheckBoxChanged ( int state )
@@ -3062,7 +4330,17 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 			qDebug() << "error, shouldn't be reached";
 			res = false;
 		}
-		qDebug() << res;
+
+		qDebug() << "save file res =" << res;
+
+		if ( res )
+		{
+			QMessageBox::information(this, "Save file", QString("Saved file to '%1'").arg(path), QMessageBox::Ok, QMessageBox::Ok);
+		}
+		if ( res == false )
+		{
+			QMessageBox::warning(this, "Save file", QString("Unable to save file to '%1'\n\nPlease choose a different path").arg(path), QMessageBox::Ok, QMessageBox::Ok);
+		}
 	}
 }
 
@@ -3098,6 +4376,19 @@ About::About ( QWidget *parent )
 	setLayout(layout);
 }
 
+void MainWindow::closeEvent ( QCloseEvent *event )
+{
+	qDebug() << "closeEvent called";
+
+	event->ignore();
+
+	QMessageBox *box = new QMessageBox(QMessageBox::Question, "ChronoPlotter", "Are you sure you want to exit?", QMessageBox::Yes | QMessageBox::Cancel, this);
+
+	QObject::connect(box->button(QMessageBox::Yes), &QAbstractButton::clicked, this, &QApplication::quit);
+	QObject::connect(box->button(QMessageBox::Cancel), &QAbstractButton::clicked, box, &QObject::deleteLater);
+	box->show();
+}
+
 int main ( int argc, char *argv[] )
 {
 	QApplication a(argc, argv);
@@ -3122,11 +4413,13 @@ int main ( int argc, char *argv[] )
 	QVBoxLayout *mainLayout = new QVBoxLayout();
 	mainLayout->addWidget(tabs);
 
+	MainWindow *mainWindow = new MainWindow();
 	QWidget *w = new QWidget();
 	w->setLayout(mainLayout);
-	w->setGeometry(300, 300, 1100, mainLayout->sizeHint().height());
-	w->setWindowTitle("ChronoPlotter");
-	w->show();
+	mainWindow->setCentralWidget(w);
+	mainWindow->setGeometry(300, 300, 1200, mainLayout->sizeHint().height());
+	mainWindow->setWindowTitle("ChronoPlotter");
+	mainWindow->show();
 
 	return a.exec();
 }
