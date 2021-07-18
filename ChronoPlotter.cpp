@@ -767,7 +767,11 @@ void PowderTest::addNewClicked ( bool state )
 	series->chargeWeight->setSingleStep(0.1);
 	series->chargeWeight->setMinimumWidth(100);
 	series->chargeWeight->setMaximumWidth(100);
-	seriesGrid->addWidget(series->chargeWeight, numRows - 1, 2);
+
+	QHBoxLayout *chargeWeightLayout = new QHBoxLayout();
+	chargeWeightLayout->addWidget(series->chargeWeight);
+	chargeWeightLayout->addStretch(0);
+	seriesGrid->addLayout(chargeWeightLayout, numRows - 1, 2);
 
 	const char *velocityUnits2;
 	if ( velocityUnits->currentIndex() == FPS )
@@ -1008,7 +1012,11 @@ void PowderTest::manualDataEntry ( bool state )
 	series->chargeWeight->setSingleStep(0.1);
 	series->chargeWeight->setMinimumWidth(100);
 	series->chargeWeight->setMaximumWidth(100);
-	seriesGrid->addWidget(series->chargeWeight, 1, 2);
+
+	QHBoxLayout *chargeWeightLayout = new QHBoxLayout();
+	chargeWeightLayout->addWidget(series->chargeWeight);
+	chargeWeightLayout->addStretch(0);
+	seriesGrid->addLayout(chargeWeightLayout, 1, 2);
 
 	const char *velocityUnits2;
 	if ( velocityUnits->currentIndex() == FPS )
@@ -1940,18 +1948,18 @@ void PowderTest::seriesCheckBoxChanged ( int state )
 			{
 				qDebug() << "Grid row" << i << "was checked";
 
-				seriesName->setStyleSheet("");
+				seriesName->setEnabled(true);
 				chargeWeight->setEnabled(true);
-				seriesResult->setStyleSheet("");
+				seriesResult->setEnabled(true);
 				seriesDate->setEnabled(true);
 			}
 			else
 			{
 				qDebug() << "Grid row" << i << "was unchecked";
 
-				seriesName->setStyleSheet("color: #878787");
+				seriesName->setEnabled(false);
 				chargeWeight->setEnabled(false);
-				seriesResult->setStyleSheet("color: #878787");
+				seriesResult->setEnabled(false);
 				seriesDate->setEnabled(false);
 			}
 
@@ -1974,7 +1982,7 @@ void PowderTest::seriesManualCheckBoxChanged ( int state )
 		if ( checkBox == rowCheckBox )
 		{
 			QWidget *seriesName = seriesGrid->itemAtPosition(i, 1)->widget();
-			QWidget *chargeWeight = seriesGrid->itemAtPosition(i, 2)->widget();
+			QWidget *chargeWeight = seriesGrid->itemAtPosition(i, 2)->layout()->itemAt(0)->widget();
 			QWidget *seriesResult = seriesGrid->itemAtPosition(i, 3)->widget();
 			QWidget *seriesEnterData = seriesGrid->itemAtPosition(i, 4)->widget();
 			QWidget *seriesDelete = seriesGrid->itemAtPosition(i, 5)->widget();
@@ -1983,9 +1991,9 @@ void PowderTest::seriesManualCheckBoxChanged ( int state )
 			{
 				qDebug() << "Grid row" << i << "was checked";
 
-				seriesName->setStyleSheet("");
+				seriesName->setEnabled(true);
 				chargeWeight->setEnabled(true);
-				seriesResult->setStyleSheet("");
+				seriesResult->setEnabled(true);
 				seriesEnterData->setEnabled(true);
 				seriesDelete->setEnabled(true);
 			}
@@ -1993,9 +2001,9 @@ void PowderTest::seriesManualCheckBoxChanged ( int state )
 			{
 				qDebug() << "Grid row" << i << "was unchecked";
 
-				seriesName->setStyleSheet("color: #878787");
+				seriesName->setEnabled(false);
 				chargeWeight->setEnabled(false);
-				seriesResult->setStyleSheet("color: #878787");
+				seriesResult->setEnabled(false);
 				seriesEnterData->setEnabled(false);
 				seriesDelete->setEnabled(false);
 			}
@@ -2021,7 +2029,7 @@ void PowderTest::headerCheckBoxChanged ( int state )
 	}
 	else
 	{
-		qDebug() << "Header checkbox was checked";
+		qDebug() << "Header checkbox was unchecked";
 
 		for ( int i = 0; i < seriesGrid->rowCount() - 1; i++ )
 		{
@@ -2877,6 +2885,28 @@ double sampleStdev ( QList<double> vals )
 	return std::sqrt(temp / (totalShots - 1));
 }
 
+double SeatingDepthTest::calculateXStdev ( QList<QPair<double, double> > coordinates )
+{
+	QList<double> xCoords;
+	for ( int i = 0; i < coordinates.size(); i++ )
+	{
+		xCoords.append(coordinates.at(i).first);
+	}
+
+	return sampleStdev(xCoords);
+}
+
+double SeatingDepthTest::calculateYStdev ( QList<QPair<double, double> > coordinates )
+{
+	QList<double> yCoords;
+	for ( int i = 0; i < coordinates.size(); i++ )
+	{
+		yCoords.append(coordinates.at(i).second);
+	}
+
+	return sampleStdev(yCoords);
+}
+
 double SeatingDepthTest::calculateRSD ( QList<QPair<double, double> > coordinates )
 {
 	QList<double> xCoords;
@@ -2970,33 +3000,97 @@ void SeatingDepthTest::selectShotMarkerFile ( bool state )
 			series->cartridgeLength->setMinimumWidth(100);
 			series->cartridgeLength->setMaximumWidth(100);
 
-			series->extremeSpread = calculateES(series->coordinates);
-			series->radialStdev = calculateRSD(series->coordinates);
-			series->meanRadius = calculateMR(series->coordinates);
-
 			/*
-			 * To keep things simple, we default to inches for group size when loading ShotMarker data. We
-			 * restrict the options to inches and centimeters, as well, to keep things from getting too
-			 * complex. MOA and mils aren't useful without a target distance, which technically is recorded
-			 * in the .CSV, but often enough that number is incorrect or never changed.
+			 * ShotMarker records shot coordinates in millimeters, inches, MOA, and mils. Inches appears to have the highest resolution,
+			 * while other units are rounded in some capacity. We'd like to provide the user the ability to graph all group size
+			 * calculations (ES, RSD, MR, etc.) with all units. The simplest way is to just perform every calculation upfront and save
+			 * the results. This saves a ton of complexity (and opportunity for bugs), and the performance hit is pretty negligible.
+			 *
+			 * Iterate through each unit and perform each group size calculation, always starting from inches. The results are then stored
+			 * in QLists, where each index correlates to the index constants used in groupUnits.
 			 */
 
-			//QLabel *groupSizeLabel = new QLabel(QString("%1 shot%2, %3 %4").arg(totalShots).arg(totalShots > 1 ? "s" : "").arg(groupSize).arg(velocityMax).arg(series->velocityUnits));
+			/* Source coordinates are already in inches, perform calculations directly */
 
-			if ( groupMeasurementType->currentIndex() == ES )
+			series->extremeSpread.append(calculateES(series->coordinates));
+			series->yStdev.append(calculateYStdev(series->coordinates));
+			series->xStdev.append(calculateXStdev(series->coordinates));
+			series->radialStdev.append(calculateRSD(series->coordinates));
+			series->meanRadius.append(calculateMR(series->coordinates));
+
+			/* Convert inches to MOA */
+
+			// C++ is tricky here. If we don't cast targetDistance or 100 to a double, then calculations like 650 / 100 will return 6 instead of 6.5!
+			series->extremeSpread.append( series->extremeSpread.at(INCH) / (1.047 * ((double)series->targetDistance / (double)100)) );
+			series->yStdev.append( series->yStdev.at(INCH) / (1.047 * ((double)series->targetDistance / (double)100)) );
+			series->xStdev.append( series->xStdev.at(INCH) / (1.047 * ((double)series->targetDistance / (double)100)) );
+			series->radialStdev.append( series->radialStdev.at(INCH) / (1.047 * ((double)series->targetDistance / (double)100)) );
+			series->meanRadius.append( series->meanRadius.at(INCH) / (1.047 * ((double)series->targetDistance / (double)100)) );
+
+			/* Convert inches to centimeters, then perform calculations */
+
+			QList<QPair<double, double> > coordinatesCm;
+			for ( int i = 0; i < series->coordinates.size(); i++ )
 			{
-				series->groupSizeLabel = new QLabel(QString("%1 in").arg(series->extremeSpread));
+				// convert inches to cm
+				coordinatesCm.append( QPair<double, double>(series->coordinates.at(i).first * 2.54, series->coordinates.at(i).second * 2.54) );
 			}
-			else if ( groupMeasurementType->currentIndex() == RSD )
+
+			series->extremeSpread.append(calculateES(coordinatesCm));
+			series->yStdev.append(calculateYStdev(coordinatesCm));
+			series->xStdev.append(calculateXStdev(coordinatesCm));
+			series->radialStdev.append(calculateRSD(coordinatesCm));
+			series->meanRadius.append(calculateMR(coordinatesCm));
+
+			/* Convert inches to mils */
+
+			// mils = target distance (converted from yards to inches), divided by 1000. What elegance!
+			series->extremeSpread.append( series->extremeSpread.at(INCH) / (((double)series->targetDistance * 3 * 12) / (double)1000) );
+			series->yStdev.append( series->yStdev.at(INCH) / (((double)series->targetDistance * 3 * 12) / (double)1000) );
+			series->xStdev.append( series->xStdev.at(INCH) / (((double)series->targetDistance * 3 * 12) / (double)1000) );
+			series->radialStdev.append( series->radialStdev.at(INCH) / (((double)series->targetDistance * 3 * 12) / (double)1000) );
+			series->meanRadius.append( series->meanRadius.at(INCH) / (((double)series->targetDistance * 3 * 12) / (double)1000) );
+
+			const char *groupUnits2;
+			if ( groupUnits->currentIndex() == INCH )
 			{
-				series->groupSizeLabel = new QLabel(QString("%1 in").arg(series->radialStdev));
+				groupUnits2 = "in";
+			}
+			else if ( groupUnits->currentIndex() == MOA )
+			{
+				groupUnits2 = "MOA";
+			}
+			else if ( groupUnits->currentIndex() == CENTIMETER )
+			{
+				groupUnits2 = "cm";
 			}
 			else
 			{
-				series->groupSizeLabel = new QLabel(QString("%1 in").arg(series->meanRadius));
+				groupUnits2 = "mil";
 			}
 
-			qDebug() << "Series '" << series->name->text() << "' has ES" << series->extremeSpread << ", RSD" << series->radialStdev << ", and MR" << series->meanRadius;
+			if ( groupMeasurementType->currentIndex() == ES )
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 %2").arg(series->extremeSpread.at(groupUnits->currentIndex()), 0, 'f', 3).arg(groupUnits2));
+			}
+			else if ( groupMeasurementType->currentIndex() == YSTDEV )
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 %2").arg(series->yStdev.at(groupUnits->currentIndex()), 0, 'f', 3).arg(groupUnits2));
+			}
+			else if ( groupMeasurementType->currentIndex() == XSTDEV )
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 %2").arg(series->xStdev.at(groupUnits->currentIndex()), 0, 'f', 3).arg(groupUnits2));
+			}
+			else if ( groupMeasurementType->currentIndex() == RSD )
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 %2").arg(series->radialStdev.at(groupUnits->currentIndex()), 0, 'f', 3).arg(groupUnits2));
+			}
+			else
+			{
+				series->groupSizeLabel = new QLabel(QString("%1 %2").arg(series->meanRadius.at(groupUnits->currentIndex()), 0, 'f', 3).arg(groupUnits2));
+			}
+
+			qDebug() << "Series '" << series->name->text() << "' has ES" << series->extremeSpread << ", RSD" << series->radialStdev << ", and MR" << series->meanRadius << "at target distance" << series->targetDistance;
 
 			seatingSeriesData.append(series);
 		}
@@ -3093,9 +3187,24 @@ QList<SeatingSeries *> SeatingDepthTest::ExtractShotMarkerSeries ( QTextStream &
 				curSeries = new SeatingSeries();
 				curSeries->isValid = false;
 				curSeries->seriesNum = seriesNum;
-				curSeries->name = new QLabel(rows.at(1));
+				curSeries->name = new QLabel(rows.at(1) + QString(" (%1)").arg(rows.at(3)));
 				curSeries->deleted = false;
 				curSeries->firstDate = rows.at(0);
+
+				if ( rows.at(3).right(1) == "y" )
+				{
+					// distance is in yards already
+					QString distance = rows.at(3);
+					distance.chop(1);
+					curSeries->targetDistance = distance.toInt(NULL, 10);
+				}
+				else
+				{
+					// convert from meters to yards
+					QString distance = rows.at(3);
+					distance.chop(1);
+					curSeries->targetDistance = distance.toInt(NULL, 10) * 1.0936133; // the result is casted to an int
+				}
 
 				seriesNum++;
 			}
@@ -3108,6 +3217,12 @@ QList<SeatingSeries *> SeatingDepthTest::ExtractShotMarkerSeries ( QTextStream &
 				if ( seriesTime.isValid() )
 				{
 					// Rows with a time in the second cell are shot data
+
+					if ( curSeries->firstTime.isNull() )
+					{
+						curSeries->firstTime = rows.at(1);
+						qDebug() << "firstTime =" << curSeries->firstTime;
+					}
 
 					qDebug() << "adding coords" << QPair<double,double>(rows.at(7).toDouble(), rows.at(8).toDouble());
 
@@ -3199,7 +3314,7 @@ void SeatingDepthTest::addNewClicked ( bool state )
 	series->enabled = new QCheckBox();
 	series->enabled->setChecked(true);
 
-	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesCheckBoxChanged(int)));
+	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesManualCheckBoxChanged(int)));
 	seatingSeriesGrid->addWidget(series->enabled, numRows - 1, 0);
 
 	int newSeriesNum = 1;
@@ -3224,14 +3339,22 @@ void SeatingDepthTest::addNewClicked ( bool state )
 	series->cartridgeLength->setSingleStep(0.001);
 	series->cartridgeLength->setMinimumWidth(100);
 	series->cartridgeLength->setMaximumWidth(100);
-	seatingSeriesGrid->addWidget(series->cartridgeLength, numRows - 1, 2);
+
+	QHBoxLayout *cartridgeLengthLayout = new QHBoxLayout();
+	cartridgeLengthLayout->addWidget(series->cartridgeLength);
+	cartridgeLengthLayout->addStretch(0);
+	seatingSeriesGrid->addLayout(cartridgeLengthLayout, numRows - 1, 2);
 
 	series->groupSize = new QDoubleSpinBox();
 	series->groupSize->setDecimals(3);
 	series->groupSize->setSingleStep(0.001);
 	series->groupSize->setMinimumWidth(100);
 	series->groupSize->setMaximumWidth(100);
-	seatingSeriesGrid->addWidget(series->groupSize, numRows - 1, 3);
+
+	QHBoxLayout *groupSizeLayout = new QHBoxLayout();
+	groupSizeLayout->addWidget(series->groupSize);
+	groupSizeLayout->addStretch(0);
+	seatingSeriesGrid->addLayout(groupSizeLayout, numRows - 1, 3);
 
 	series->deleteButton = new QPushButton();
 	connect(series->deleteButton, SIGNAL(clicked(bool)), this, SLOT(deleteClicked(bool)));
@@ -3337,8 +3460,6 @@ SeatingDepthTest::SeatingDepthTest ( QWidget *parent )
 
 	leftLayout->addWidget(seatingGroupBox);
 
-	// XXX snip
-
 	/* Right panel */
 
 	QVBoxLayout *rightLayout = new QVBoxLayout();
@@ -3384,6 +3505,8 @@ SeatingDepthTest::SeatingDepthTest ( QWidget *parent )
 
 	groupMeasurementType = new QComboBox();
 	groupMeasurementType->addItem("Extreme Spread (ES)");
+	groupMeasurementType->addItem("Y Stdev");
+	groupMeasurementType->addItem("X Stdev");
 	groupMeasurementType->addItem("Radial Stdev (RSD)");
 	groupMeasurementType->addItem("Mean Radius (MR)");
 	connect(groupMeasurementType, SIGNAL(activated(int)), this, SLOT(groupMeasurementTypeChanged(int)));
@@ -3492,8 +3615,9 @@ void SeatingDepthTest::loadNewShotData ( bool state )
 		// Delete the loaded shot data
 		seatingSeriesData.clear();
 
-		// Disconnect the velocity units header signal (used in manual data entry), if necessary
-		//disconnect(velocityUnits, SIGNAL(activated(int)), this, SLOT(velocityUnitsChanged(int)));
+		// Disconnect the group measurement type signal (used in imported data entry), if necessary
+		disconnect(groupMeasurementType, SIGNAL(activated(int)), this, SLOT(importedGroupMeasurementTypeChanged(int)));
+		disconnect(groupUnits, SIGNAL(activated(int)), this, SLOT(importedGroupUnitsChanged(int)));
 	}
 	else
 	{
@@ -3562,14 +3686,47 @@ void SeatingDepthTest::DisplaySeriesData ( void )
 	connect(headerCheckBox, SIGNAL(stateChanged(int)), this, SLOT(headerCheckBoxChanged(int)));
 	seatingSeriesGrid->addWidget(headerCheckBox, 0, 0);
 
+	/*
+	 * Connect signals to update all calculations in the Group Size column when the user selects a new group measurement type (ES, RSD, MR, etc.) or
+	 * measurement unit (in, MOA, cm, mil, etc.). This is only done for imported shot data, where the group sizes are QLabels and not user-controllable.
+	 */
+
+	connect(groupMeasurementType, SIGNAL(activated(int)), this, SLOT(importedGroupMeasurementTypeChanged(int)));
+	connect(groupUnits, SIGNAL(activated(int)), this, SLOT(importedGroupUnitsChanged(int)));
+
 	/* Headers for series data */
 
 	QLabel *headerNumber = new QLabel("Series Name");
 	seatingSeriesGrid->addWidget(headerNumber, 0, 1, Qt::AlignVCenter);
 	headerLengthType = new QLabel("CBTO");
 	seatingSeriesGrid->addWidget(headerLengthType, 0, 2, Qt::AlignVCenter);
-	headerGroupType = new QLabel("Group Size (ES)");
+
+	const char *headerGroupType2;
+	if ( groupMeasurementType->currentIndex() == ES )
+	{
+		headerGroupType2 = "Group Size (ES)";
+	}
+	else if ( groupMeasurementType->currentIndex() == YSTDEV )
+	{
+		headerGroupType2 = "Group Size (Y Stdev)";
+	}
+	else if ( groupMeasurementType->currentIndex() == XSTDEV )
+	{
+		headerGroupType2 = "Group Size (X Stdev)";
+	}
+	else if ( groupMeasurementType->currentIndex() == RSD )
+	{
+		headerGroupType2 = "Group Size (RSD)";
+	}
+	else
+	{
+		headerGroupType2 = "Group Size (MR)";
+	}
+
+	headerGroupType = new QLabel(headerGroupType2);
 	seatingSeriesGrid->addWidget(headerGroupType, 0, 3, Qt::AlignVCenter);
+
+
 	QLabel *headerDate = new QLabel("Series Date");
 	seatingSeriesGrid->addWidget(headerDate, 0, 4, Qt::AlignVCenter);
 
@@ -3671,7 +3828,30 @@ void SeatingDepthTest::manualDataEntry ( bool state )
 	seatingSeriesGrid->addWidget(headerNumber, 0, 1, Qt::AlignVCenter);
 	headerLengthType = new QLabel("CBTO");
 	seatingSeriesGrid->addWidget(headerLengthType, 0, 2, Qt::AlignVCenter);
-	headerGroupType = new QLabel("Group Size (ES)");
+
+	const char *headerGroupType2;
+	if ( groupMeasurementType->currentIndex() == ES )
+	{
+		headerGroupType2 = "Group Size (ES)";
+	}
+	else if ( groupMeasurementType->currentIndex() == YSTDEV )
+	{
+		headerGroupType2 = "Group Size (Y Stdev)";
+	}
+	else if ( groupMeasurementType->currentIndex() == XSTDEV )
+	{
+		headerGroupType2 = "Group Size (X Stdev)";
+	}
+	else if ( groupMeasurementType->currentIndex() == RSD )
+	{
+		headerGroupType2 = "Group Size (RSD)";
+	}
+	else
+	{
+		headerGroupType2 = "Group Size (MR)";
+	}
+
+	headerGroupType = new QLabel(headerGroupType2);
 	seatingSeriesGrid->addWidget(headerGroupType, 0, 3, Qt::AlignVCenter);
 	QLabel *headerDelete = new QLabel("");
 	seatingSeriesGrid->addWidget(headerDelete, 0, 4, Qt::AlignVCenter);
@@ -3685,7 +3865,7 @@ void SeatingDepthTest::manualDataEntry ( bool state )
 	series->enabled = new QCheckBox();
 	series->enabled->setChecked(true);
 
-	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesCheckBoxChanged(int)));
+	connect(series->enabled, SIGNAL(stateChanged(int)), this, SLOT(seriesManualCheckBoxChanged(int)));
 	seatingSeriesGrid->addWidget(series->enabled, 1, 0);
 
 	series->seriesNum = 1;
@@ -3698,14 +3878,22 @@ void SeatingDepthTest::manualDataEntry ( bool state )
 	series->cartridgeLength->setSingleStep(0.001);
 	series->cartridgeLength->setMinimumWidth(100);
 	series->cartridgeLength->setMaximumWidth(100);
-	seatingSeriesGrid->addWidget(series->cartridgeLength, 1, 2);
+
+	QHBoxLayout *cartridgeLengthLayout = new QHBoxLayout();
+	cartridgeLengthLayout->addWidget(series->cartridgeLength);
+	cartridgeLengthLayout->addStretch(0);
+	seatingSeriesGrid->addLayout(cartridgeLengthLayout, 1, 2);
 
 	series->groupSize = new QDoubleSpinBox();
 	series->groupSize->setDecimals(3);
 	series->groupSize->setSingleStep(0.001);
 	series->groupSize->setMinimumWidth(100);
 	series->groupSize->setMaximumWidth(100);
-	seatingSeriesGrid->addWidget(series->groupSize, 1, 3);
+
+	QHBoxLayout *groupSizeLayout = new QHBoxLayout();
+	groupSizeLayout->addWidget(series->groupSize);
+	groupSizeLayout->addStretch(0);
+	seatingSeriesGrid->addLayout(groupSizeLayout, 1, 3);
 
 	series->deleteButton = new QPushButton();
 	connect(series->deleteButton, SIGNAL(clicked(bool)), this, SLOT(deleteClicked(bool)));
@@ -3734,15 +3922,56 @@ void SeatingDepthTest::seriesCheckBoxChanged ( int state )
 		if ( checkBox == rowCheckBox )
 		{
 			QWidget *seriesName = seatingSeriesGrid->itemAtPosition(i, 1)->widget();
-			QWidget *cartridgeLength = seatingSeriesGrid->itemAtPosition(i, 2)->widget();
-			QWidget *groupSize = seatingSeriesGrid->itemAtPosition(i, 3)->widget();
+			QWidget *cartridgeLength = seatingSeriesGrid->itemAtPosition(i, 2)->layout()->itemAt(0)->widget();
+			QWidget *groupSizeLabel = seatingSeriesGrid->itemAtPosition(i, 3)->widget();
+			QWidget *seriesDate = seatingSeriesGrid->itemAtPosition(i, 4)->widget();
+
+			if ( checkBox->isChecked() )
+			{
+				qDebug() << "Grid row" << i << "was checked";
+
+				seriesName->setEnabled(true);
+				cartridgeLength->setEnabled(true);
+				groupSizeLabel->setEnabled(true);
+				seriesDate->setEnabled(true);
+			}
+			else
+			{
+				qDebug() << "Grid row" << i << "was unchecked";
+
+				seriesName->setEnabled(false);
+				cartridgeLength->setEnabled(false);
+				groupSizeLabel->setEnabled(false);
+				seriesDate->setEnabled(false);
+			}
+
+			return;
+		}
+	}
+}
+
+void SeatingDepthTest::seriesManualCheckBoxChanged ( int state )
+{
+	QCheckBox *checkBox = qobject_cast<QCheckBox *>(sender());
+
+	qDebug() << "seriesManualCheckBoxChanged state =" << state;
+
+	// We have the checkbox object, now locate its row in the grid
+	for ( int i = 0; i < seatingSeriesGrid->rowCount() - 1; i++ )
+	{
+		QWidget *rowCheckBox = seatingSeriesGrid->itemAtPosition(i, 0)->widget();
+		if ( checkBox == rowCheckBox )
+		{
+			QWidget *seriesName = seatingSeriesGrid->itemAtPosition(i, 1)->widget();
+			QWidget *cartridgeLength = seatingSeriesGrid->itemAtPosition(i, 2)->layout()->itemAt(0)->widget();
+			QWidget *groupSize = seatingSeriesGrid->itemAtPosition(i, 3)->layout()->itemAt(0)->widget();
 			QWidget *deleteButton = seatingSeriesGrid->itemAtPosition(i, 4)->widget();
 
 			if ( checkBox->isChecked() )
 			{
 				qDebug() << "Grid row" << i << "was checked";
 
-				seriesName->setStyleSheet("");
+				seriesName->setEnabled(true);
 				cartridgeLength->setEnabled(true);
 				groupSize->setEnabled(true);
 				deleteButton->setEnabled(true);;
@@ -3751,7 +3980,7 @@ void SeatingDepthTest::seriesCheckBoxChanged ( int state )
 			{
 				qDebug() << "Grid row" << i << "was unchecked";
 
-				seriesName->setStyleSheet("color: #878787");
+				seriesName->setEnabled(false);
 				cartridgeLength->setEnabled(false);
 				groupSize->setEnabled(false);
 				deleteButton->setEnabled(false);
@@ -3778,7 +4007,7 @@ void SeatingDepthTest::headerCheckBoxChanged ( int state )
 	}
 	else
 	{
-		qDebug() << "Header checkbox was checked";
+		qDebug() << "Header checkbox was unchecked";
 
 		for ( int i = 0; i < seatingSeriesGrid->rowCount() - 1; i++ )
 		{
@@ -3840,6 +4069,14 @@ void SeatingDepthTest::groupMeasurementTypeChanged ( int index )
 	{
 		headerGroupType->setText("Group Size (ES)");
 	}
+	else if ( index == YSTDEV )
+	{
+		headerGroupType->setText("Group Size (Y Stdev)");
+	}
+	else if ( index == XSTDEV )
+	{
+		headerGroupType->setText("Group Size (X Stdev)");
+	}
 	else if ( index == RSD )
 	{
 		headerGroupType->setText("Group Size (RSD)");
@@ -3847,6 +4084,151 @@ void SeatingDepthTest::groupMeasurementTypeChanged ( int index )
 	else
 	{
 		headerGroupType->setText("Group Size (MR)");
+	}
+}
+
+void SeatingDepthTest::importedGroupMeasurementTypeChanged ( int index )
+{
+	qDebug() << "importedGroupMeasurementTypeChanged index =" << index;
+
+	/*
+	 * This signal handler is only connected in imported data entry mode. When the group measurement type is changed,
+	 * we need to iterate through and update every Group Size row to display the new measurement type.
+	 */
+
+	const char *groupMeasurementType2;
+	if ( index == ES )
+	{
+		headerGroupType->setText("Group Size (ES)");
+		groupMeasurementType2 = "ES";
+	}
+	else if ( index == YSTDEV )
+	{
+		headerGroupType->setText("Group Size (Y Stdev)");
+		groupMeasurementType2 = "Y Stdev";
+	}
+	else if ( index == XSTDEV )
+	{
+		headerGroupType->setText("Group Size (X Stdev)");
+		groupMeasurementType2 = "X Stdev";
+	}
+	else if ( index == RSD )
+	{
+		headerGroupType->setText("Group Size (RSD)");
+		groupMeasurementType2 = "RSD";
+	}
+	else
+	{
+		headerGroupType->setText("Group Size (MR)");
+		groupMeasurementType2 = "MR";
+	}
+
+	const char *groupUnits2;
+	if ( groupUnits->currentIndex() == INCH )
+	{
+		groupUnits2 = "in";
+	}
+	else if ( groupUnits->currentIndex() == MOA )
+	{
+		groupUnits2 = "MOA";
+	}
+	else if ( groupUnits->currentIndex() == CENTIMETER )
+	{
+		groupUnits2 = "cm";
+	}
+	else
+	{
+		groupUnits2 = "mil";
+	}
+
+	for ( int i = 0; i < seatingSeriesData.size(); i++ )
+	{
+		SeatingSeries *series = seatingSeriesData.at(i);
+
+		double groupSize;
+		if ( index == ES )
+		{
+			groupSize = series->extremeSpread.at(groupUnits->currentIndex());
+		}
+		else if ( index == YSTDEV )
+		{
+			groupSize = series->yStdev.at(groupUnits->currentIndex());
+		}
+		else if ( index == XSTDEV )
+		{
+			groupSize = series->xStdev.at(groupUnits->currentIndex());
+		}
+		else if ( index == RSD )
+		{
+			groupSize = series->radialStdev.at(groupUnits->currentIndex());
+		}
+		else
+		{
+			groupSize = series->meanRadius.at(groupUnits->currentIndex());
+		}
+
+		qDebug() << "Setting series" << i << "to" << groupMeasurementType2 << groupSize;
+
+		series->groupSizeLabel->setText(QString("%1 %2").arg(groupSize, 0, 'f', 3).arg(groupUnits2));
+	}
+}
+
+void SeatingDepthTest::importedGroupUnitsChanged ( int index )
+{
+	qDebug() << "importedGroupUnitsChanged index =" << index;
+
+	/*
+	 * This signal handler is only connected in imported data entry mode. When the group size units is changed,
+	 * we need to iterate through and update every Group Size row to display the new unit.
+	 */
+
+	const char *groupUnits2;
+	if ( index == INCH )
+	{
+		groupUnits2 = "in";
+	}
+	else if ( index == MOA )
+	{
+		groupUnits2 = "MOA";
+	}
+	else if ( index == CENTIMETER )
+	{
+		groupUnits2 = "cm";
+	}
+	else
+	{
+		groupUnits2 = "mil";
+	}
+
+	for ( int i = 0; i < seatingSeriesData.size(); i++ )
+	{
+		SeatingSeries *series = seatingSeriesData.at(i);
+
+		double groupSize;
+		if ( groupMeasurementType->currentIndex() == ES )
+		{
+			groupSize = series->extremeSpread.at(index);
+		}
+		else if ( groupMeasurementType->currentIndex() == YSTDEV )
+		{
+			groupSize = series->yStdev.at(index);
+		}
+		else if ( groupMeasurementType->currentIndex() == XSTDEV )
+		{
+			groupSize = series->xStdev.at(index);
+		}
+		else if ( groupMeasurementType->currentIndex() == RSD )
+		{
+			groupSize = series->radialStdev.at(index);
+		}
+		else
+		{
+			groupSize = series->meanRadius.at(index);
+		}
+
+		qDebug() << "Setting series" << i << "to" << groupSize << groupUnits2;
+
+		series->groupSizeLabel->setText(QString("%1 %2").arg(groupSize, 0, 'f', 3).arg(groupUnits2));
 	}
 }
 
@@ -3896,7 +4278,7 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 				return;
 			}
 
-			if ( series->groupSize->value() == 0 )
+			if ( series->groupSize && (series->groupSize->value() == 0) )
 			{
 				qDebug() << series->name->text() << "is missing group size, bailing";
 
@@ -3965,7 +4347,37 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 		SeatingSeries *series = seriesToGraph.at(i);
 
 		double cartridgeLength = series->cartridgeLength->value();
-		double groupSize = series->groupSize->value();
+
+		double groupSize;
+		if ( series->groupSize )
+		{
+			// If the user selected manual data entry
+			groupSize = series->groupSize->value();
+		}
+		else
+		{
+			// If the user imported data from a .CSV
+			if ( groupMeasurementType->currentIndex() == ES )
+			{
+				groupSize = series->extremeSpread.at(groupUnits->currentIndex());
+			}
+			else if ( groupMeasurementType->currentIndex() == YSTDEV )
+			{
+				groupSize = series->yStdev.at(groupUnits->currentIndex());
+			}
+			else if ( groupMeasurementType->currentIndex() == XSTDEV )
+			{
+				groupSize = series->xStdev.at(groupUnits->currentIndex());
+			}
+			else if ( groupMeasurementType->currentIndex() == RSD )
+			{
+				groupSize = series->radialStdev.at(groupUnits->currentIndex());
+			}
+			else
+			{
+				groupSize = series->meanRadius.at(groupUnits->currentIndex());
+			}
+		}
 
 		qDebug() << QString("%1 - %2, %3").arg(series->name->text()).arg(cartridgeLength).arg(groupSize);
 		qDebug() << "";
@@ -4065,6 +4477,14 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 	if ( groupMeasurementType->currentIndex() == ES )
 	{
 		groupMeasurementType2 = "Extreme Spread";
+	}
+	else if ( groupMeasurementType->currentIndex() == YSTDEV )
+	{
+		groupMeasurementType2 = "Y Standard Deviation";
+	}
+	else if ( groupMeasurementType->currentIndex() == XSTDEV )
+	{
+		groupMeasurementType2 = "X Standard Deviation";
 	}
 	else if ( groupMeasurementType->currentIndex() == RSD )
 	{
@@ -4174,15 +4594,13 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 
 	for ( int i = 0; i < seriesToGraph.size(); i++ )
 	{
-		SeatingSeries *series = seriesToGraph.at(i);
-
 		// Collect annotation contents
 		QStringList aboveAnnotationText;
 		QStringList belowAnnotationText;
 
 		if ( groupSizeCheckBox->isChecked() )
 		{
-			QString annotation = QString::number(series->groupSize->value());
+			QString annotation = QString::number(yPoints.at(i), 'f', 3);
 			if ( groupSizeLocation->currentIndex() == ABOVE_STRING )
 			{
 				aboveAnnotationText.append(annotation);
@@ -4198,7 +4616,7 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 			if ( prevSizeSet )
 			{
 				QString sign;
-				double delta = series->groupSize->value() - prevSize;
+				double delta = yPoints.at(i) - prevSize;
 				if ( delta < 0 )
 				{
 					sign = QString("-");
@@ -4224,7 +4642,7 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 
 		double yCoord;
 
-		yCoord = series->groupSize->value();
+		yCoord = yPoints.at(i);
 
 		QCPItemText *belowAnnotation = new QCPItemText(customPlot);
 		belowAnnotation->setText(belowAnnotationText.join('\n'));
@@ -4349,31 +4767,43 @@ About::About ( QWidget *parent )
 {
 	qDebug() << "About this app";
 
+	QLabel *logo = new QLabel();
 	QPixmap logoPix(":/images/logo.png");
+	logo->setPixmap(logoPix.scaledToWidth(600, Qt::SmoothTransformation));
 
 	QLabel *about1 = new QLabel();
 	about1->setTextFormat(Qt::RichText);
-	about1->setText(QString("<center><h1>Version %1</h1>By Michael Coppola<br><a href=\"https://github.com/mncoppola/ChronoPlotter\">github.com/mncoppola/ChronoPlotter</a>").arg(CHRONOPLOTTER_VERSION));
+	about1->setText(QString("<center><h1>Version %1</h1>By Michael Coppola<br>&#169; 2021 Precision Analytics LLC<p><a href=\"https://chronoplotter.com\">ChronoPlotter.com</a>").arg(CHRONOPLOTTER_VERSION));
 	about1->setOpenExternalLinks(true);
-
-	QLabel *logo = new QLabel();
-	logo->setPixmap(logoPix.scaledToWidth(600, Qt::SmoothTransformation));
 
 	QLabel *about2 = new QLabel();
 	about2->setTextFormat(Qt::RichText);
 	about2->setText("<center>If you found this tool helpful, share some primers with a friend in need.<br><br>Or consider contributing to:<br><a href=\"https://www.doctorswithoutborders.org/\">Doctors Without Borders</a><br><a href=\"https://www.navysealfoundation.org/\">The Navy SEAL Foundation</a><br><a href=\"https://eji.org/\">Equal Justice Initiative</a><br><a href=\"https://www.mskcc.org/\">Memorial Sloan Kettering Cancer Center</a>");
 	about2->setOpenExternalLinks(true);
 
+	QPushButton *legalButton = new QPushButton("Legal Notices", this);
+	legalButton->setMinimumWidth(250);
+	legalButton->setMaximumWidth(250);
+	connect(legalButton, &QPushButton::released, this, &About::showLegal);
+
 	QVBoxLayout *layout = new QVBoxLayout();
 	layout->addStretch(1);
 	layout->addWidget(logo);
+	layout->setAlignment(logo, Qt::AlignHCenter);
 	layout->addWidget(about1);
 	layout->addSpacing(10);
 	layout->addWidget(about2);
-	layout->setAlignment(logo, Qt::AlignHCenter);
 	layout->addStretch(3);
+	layout->addWidget(legalButton, 0, Qt::AlignHCenter);
 
 	setLayout(layout);
+}
+
+void About::showLegal ( void )
+{
+	#define LEGAL_NOTICES "ChronoPlotter (\"This software\") is intended for informational and educational usage only. This software visualizes and performs statistical analysis of load development data provided by the user but does not make or imply any load development recommendations based on that data. Users must always exercise extreme caution when performing testing related to load development, and must operate within safe load ranges published by component manufacturers at all times.\n\nPrecision Analytics LLC and the author(s) of this software disclaim any and all warranties and liabilities pertaining to usage of this software and the results provided by it. Users assume all risk, responsibilities, and liabilities arising from the usage or mis-usage of this software, including but not limited to any and all injuries, death, or losses to damages or property.\n\nThe author(s) of this software strive to provide accurate analysis of the user’s data, but cannot guarantee the absence of bugs in this software. This software is open source, and users should review this software’s source code to verify the accuracy of its calculations, algorithms, and reporting of those results prior to using this software for load development."
+
+	QMessageBox::information(this, "Legal Notices", LEGAL_NOTICES);
 }
 
 void MainWindow::closeEvent ( QCloseEvent *event )

@@ -19,7 +19,7 @@
 #include <QMainWindow>
 #include "qcustomplot/qcustomplot.h"
 
-#define CHRONOPLOTTER_VERSION "2.1.0-prerelease"
+#define CHRONOPLOTTER_VERSION "2.1.0-rc2"
 
 #define SCATTER 0
 #define LINE_SD 1
@@ -37,8 +37,10 @@
 #define COAL 1
 
 #define ES 0
-#define RSD 1
-#define MR 2
+#define YSTDEV 1
+#define XSTDEV 2
+#define RSD 3
+#define MR 4
 
 #define INCH 0
 #define MOA 1
@@ -99,9 +101,14 @@ class GraphPreview : public QWidget
 
 class About : public QWidget
 {
+	Q_OBJECT
+
 	public:
 		About(QWidget *parent = 0);
 		~About() {};
+
+	public slots:
+		void showLegal(void);
 };
 
 struct SeatingSeries
@@ -110,10 +117,12 @@ struct SeatingSeries
 	int seriesNum;
 	QLabel *name;
 	QList<QPair<double, double> > coordinates;
-	double extremeSpread;
-	double radialStdev;
-	double meanRadius;
-	//QDate firstDate;
+	QList<double> extremeSpread;
+	QList<double> yStdev;
+	QList<double> xStdev;
+	QList<double> radialStdev;
+	QList<double> meanRadius;
+	int targetDistance; // in yards
 	QString firstDate;
 	QString firstTime;
 	QDoubleSpinBox *cartridgeLength;
@@ -140,6 +149,8 @@ class SeatingDepthTest : public QWidget
 		void trendCheckBoxChanged(bool);
 		void cartridgeMeasurementTypeChanged(int);
 		void groupMeasurementTypeChanged(int);
+		void importedGroupMeasurementTypeChanged(int);
+		void importedGroupUnitsChanged(int);
 		void loadNewShotData(bool);
 		void selectShotMarkerFile(bool);
 		void manualDataEntry(bool);
@@ -147,12 +158,15 @@ class SeatingDepthTest : public QWidget
 		void deleteClicked(bool);
 		void autofillClicked(bool);
 		void headerCheckBoxChanged(int);
-		void seriesCheckBoxChanged ( int );
+		void seriesCheckBoxChanged(int);
+		void seriesManualCheckBoxChanged(int);
 		void showGraph(bool);
 		void saveGraph(bool);
 
 	protected:
 		double calculateES ( QList<QPair<double, double> > );
+		double calculateYStdev ( QList<QPair<double, double> > );
+		double calculateXStdev ( QList<QPair<double, double> > );
 		double calculateRSD ( QList<QPair<double, double> > );
 		static double pairSumX ( double, const QPair<double, double> );
 		static double pairSumY ( double, const QPair<double, double> );
