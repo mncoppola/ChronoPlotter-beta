@@ -3213,7 +3213,7 @@ QList<SeatingSeries *> SeatingDepthTest::ExtractShotMarkerSeries ( QTextStream &
 				// This is either a row containing headers, shot data, or avg/SD summary data
 
 				QTime seriesTime;
-				seriesTime = QTime::fromString(rows.at(1), "hh:mm:ss ap");
+				seriesTime = QTime::fromString(rows.at(1), "h:mm:ss ap");
 				if ( seriesTime.isValid() )
 				{
 					// Rows with a time in the second cell are shot data
