@@ -2609,9 +2609,17 @@ QList<ChronoSeries *> PowderTest::ExtractProChronoSeries ( QTextStream &csv )
 {
 	QList<ChronoSeries *> allSeries;
 	ChronoSeries *curSeries = new ChronoSeries();
-	curSeries->isValid = false;
+	curSeries->isValid = true;
 	curSeries->deleted = false;
 	curSeries->seriesNum = -1;
+	curSeries->velocityUnits = "ft/s";
+
+	/*
+	 * ProChrono has two CSV formats, their legacy Digital USB format and a newer one exported by their Digital Link app:
+	 *  - A Digital USB .CSV file contains only column headers followed by shot entries for one or more series.
+	 *  - A Digital Link .CSV file contains multiple series and precedes each series with a header containing name/stats.
+	 * We parse both in one below, for simplicity's sake for the user.
+	 */
 
 	int i = 0;
 	while ( ! csv.atEnd() )
@@ -2631,21 +2639,18 @@ QList<ChronoSeries *> PowderTest::ExtractProChronoSeries ( QTextStream &csv )
 
 		qDebug() << "Line" << i << ":" << rows;
 
-		// Validate the first row header
-		if ( i == 0 )
-		{
-			if ( (rows.size() >= 9) && (rows.at(0) == "Shot List") && (rows.at(1) == "Index") && (rows.at(2) == "Velocity") )
-			{
-				qDebug() << "Found the ProChrono header";
-			}
-			else
-			{
-				qDebug() << "File doesn't have the ProChrono header, bailing";
-				return allSeries;
-			}
-		}
+		/*
+		 * We can actually largely ignore the series name/stats headers in the Digital Link CSV. The only field we'd care
+		 * about in the header is the series name, but the name is repeated in each shot entry row.
+		 *
+		 * To parse:
+		 *  - If rows.size() >= 9 and row is not column headers, parse it as a shot entry.
+		 *  - If cell 1 of the shot entry row contains (index) 1, create a new series with the name in cell 0.
+		 *
+		 * And that's it. It should get both file formats.
+		 */
 
-		if ( rows.size() >= 3 )
+		if ( rows.size() >= 9 )
 		{
 			if ( rows.at(0) == "Shot List" )
 			{
@@ -2662,7 +2667,7 @@ QList<ChronoSeries *> PowderTest::ExtractProChronoSeries ( QTextStream &csv )
 				{
 					if ( index == 1 )
 					{
-						 // First shot in the series. End the previous series (if necessary) and start a new one.
+						// First shot in the series. End the previous series (if necessary) and start a new one.
 
 						if ( curSeries->muzzleVelocities.size() > 0 )
 						{
@@ -2675,12 +2680,13 @@ QList<ChronoSeries *> PowderTest::ExtractProChronoSeries ( QTextStream &csv )
 
 						curSeries = new ChronoSeries();
 						curSeries->isValid = true;
+						curSeries->deleted = false;
 						curSeries->seriesNum = -1;
 						curSeries->name = new QLabel(rows.at(0));
 						curSeries->velocityUnits = "ft/s";
 					}
 
-					if ( curSeries->firstDate.isNull() && (rows.size() >= 9) )
+					if ( curSeries->firstDate.isNull() )
 					{
 						QStringList dateTime = rows.at(8).split(" ");
 						if ( dateTime.size() == 2 )
@@ -2701,8 +2707,6 @@ QList<ChronoSeries *> PowderTest::ExtractProChronoSeries ( QTextStream &csv )
 				}
 			}
 		}
-
-		i++;
 	}
 
 	// End of the file. Finish parsing the current series.
