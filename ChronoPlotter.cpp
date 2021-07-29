@@ -2858,7 +2858,7 @@ double SeatingDepthTest::calculateES ( QList<QPair<double, double> > coordinates
 		for ( j = i + 1; j < coordinates.size(); j++ )
 		{
 			QPair<double, double> coord2 = coordinates.at(j);
-			double es = sqrt( pow((coord2.first - coord1.first), 2) + pow(coord2.second - coord2.second, 2) );
+			double es = sqrt( pow((coord2.first - coord1.first), 2) + pow(coord2.second - coord1.second, 2) );
 
 			//qDebug() << "Calculated ES =" << es << "for coords" << coord1 << coord2;
 
@@ -3174,7 +3174,7 @@ QList<SeatingSeries *> SeatingDepthTest::ExtractShotMarkerSeries ( QTextStream &
 		{
 			// Check if first cell is a date, signifying the beginning of a new series
 			QDate seriesDate;
-			seriesDate = QDate::fromString(rows.at(0), "MMM dd yyyy"); // XXX need to figure out if SM uses full or abbreviated month names
+			seriesDate = QDate::fromString(rows.at(0), "MMM d yyyy"); // XXX need to figure out if SM uses full or abbreviated month names
 			if ( seriesDate.isValid() )
 			{
 				 // End the previous series (if necessary) and start a new one
