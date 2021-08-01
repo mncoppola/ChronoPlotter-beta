@@ -2434,6 +2434,9 @@ void PowderTest::selectMagnetoSpeedFile ( bool state )
 
 QList<ChronoSeries *> PowderTest::ExtractMagnetoSpeedSeries ( QTextStream &csv )
 {
+	// MagnetoSpeed XFR app exports .CSV files in a slightly different format
+	bool xfr_export = false;
+
 	QList<ChronoSeries *> allSeries;
 	ChronoSeries *curSeries = new ChronoSeries();
 	curSeries->isValid = false;
@@ -2465,7 +2468,7 @@ QList<ChronoSeries *> PowderTest::ExtractMagnetoSpeedSeries ( QTextStream &csv )
 				bool useSeries = true;
 
 				// Ensure we have a valid MagnetoSpeed series
-				if ( (curSeries->seriesNum == -1) || curSeries->velocityUnits.isNull() )
+				if ( ((! xfr_export) && (curSeries->seriesNum == -1)) || curSeries->velocityUnits.isNull() )
 				{
 					qDebug() << "Series does not have all expected fields set, skipping series.";
 					useSeries = false;
@@ -2492,33 +2495,98 @@ QList<ChronoSeries *> PowderTest::ExtractMagnetoSpeedSeries ( QTextStream &csv )
 				curSeries->deleted = false;
 				curSeries->seriesNum = -1;
 			}
+			else if ( rows.at(0).compare("Synced on:") == 0 )
+			{
+				// .CSV file is exported from the MagnetoSpeed XFR app
+				xfr_export = true;
+
+				QStringList dateTime = rows.at(1).split(" ");
+				if ( dateTime.size() == 2 )
+				{
+					curSeries->firstDate = dateTime.at(0);
+					curSeries->firstTime = dateTime.at(1);
+					qDebug() << "firstDate =" << curSeries->firstDate;
+					qDebug() << "firstTime =" << curSeries->firstTime;
+				}
+				else
+				{
+					qDebug() << "Failed to split datetime cell:" << rows.at(1);
+				}
+			}
 			else if ( (rows.at(0).compare("Series") == 0) && (rows.at(2) == "Shots:") )
 			{
-				curSeries->seriesNum = rows.at(1).toInt();
-				curSeries->name = new QLabel(QString("Series %1").arg(rows.at(1).toInt()));
-				qDebug() << "seriesNum =" << curSeries->seriesNum;
+				bool ok;
+				int seriesNum = rows.at(1).toInt(&ok);
+				if ( ok )
+				{
+					// MagnetoSpeed V3 files contain an integer in the 'Series' field. Use it as the series name.
+					curSeries->seriesNum = seriesNum;
+					curSeries->name = new QLabel(QString("Series %1").arg(seriesNum));
+					qDebug() << "seriesNum =" << curSeries->seriesNum;
+				}
+				else
+				{
+					// XFR export files contain a date in the 'Series' field. Ignore it since we're expecting to be replaced by the name in the 'Notes' field.
+					qDebug() << "XFR file detected, skipping Series row";
+				}
+			}
+			else if ( rows.at(0).compare("Notes") == 0 )
+			{
+				// Use the series name if the user entered one
+				if ( rows.at(1).compare("") == 0 )
+				{
+					curSeries->name = new QLabel("Unnamed");
+				}
+				else
+				{
+					curSeries->name = new QLabel(rows.at(1));
+				}
+
+				qDebug() << "Setting name to '" << curSeries->name << "' via Notes field";
 			}
 			else
 			{
 				bool ok = false;
 
-				// If cell is a valid integer, it's a velocity value
+				// If the first cell is a valid integer, it's a velocity entry
 				rows.at(0).toInt(&ok);
 				if ( ok )
 				{
-					curSeries->muzzleVelocities.append(rows.at(2).toInt());
-					qDebug() << "muzzleVelocities +=" << rows.at(2).toInt();
-
-					if ( curSeries->muzzleVelocities.size() == 1 )
+					if ( xfr_export )
 					{
-						curSeries->velocityUnits = rows.at(3);
-						qDebug() << "velocityUnits =" << curSeries->velocityUnits;
+						curSeries->muzzleVelocities.append(rows.at(1).toInt());
+						qDebug() << "muzzleVelocities +=" << rows.at(1).toInt();
+
+						if ( curSeries->muzzleVelocities.size() == 1 )
+						{
+							curSeries->velocityUnits = rows.at(2);
+							qDebug() << "velocityUnits =" << curSeries->velocityUnits;
+						}
+					}
+					else
+					{
+						curSeries->muzzleVelocities.append(rows.at(2).toInt());
+						qDebug() << "muzzleVelocities +=" << rows.at(2).toInt();
+
+						if ( curSeries->muzzleVelocities.size() == 1 )
+						{
+							curSeries->velocityUnits = rows.at(3);
+							qDebug() << "velocityUnits =" << curSeries->velocityUnits;
+						}
 					}
 				}
 			}
 		}
 
 		i++;
+	}
+
+	// XFR export files do not include series numbers, so iterate through and set the seriesNum's
+	for ( i = 0; i < allSeries.size(); i++ )
+	{
+		ChronoSeries *series = allSeries.at(i);
+		series->seriesNum = i + 1;
+		qDebug() << "Setting" << series->name << "to" << series->seriesNum;
 	}
 
 	return allSeries;
