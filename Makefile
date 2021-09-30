@@ -12,10 +12,10 @@ MAKEFILE      = Makefile
 
 CC            = gcc
 CXX           = g++
-DEFINES       = -DQT_NO_DEBUG -DQT_SVG_LIB -DQT_PRINTSUPPORT_LIB -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB
+DEFINES       = -DQT_NO_DEBUG -DQT_PRINTSUPPORT_LIB -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB
 CFLAGS        = -m64 -pipe -O2 -Wall -W -D_REENTRANT -fPIC $(DEFINES)
 CXXFLAGS      = -m64 -pipe -O2 -Wall -W -D_REENTRANT -fPIC $(DEFINES)
-INCPATH       = -I. -I. -isystem /usr/include/x86_64-linux-gnu/qt5 -isystem /usr/include/x86_64-linux-gnu/qt5/QtSvg -isystem /usr/include/x86_64-linux-gnu/qt5/QtPrintSupport -isystem /usr/include/x86_64-linux-gnu/qt5/QtWidgets -isystem /usr/include/x86_64-linux-gnu/qt5/QtGui -isystem /usr/include/x86_64-linux-gnu/qt5/QtCore -I. -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64
+INCPATH       = -I. -I. -isystem /usr/include/x86_64-linux-gnu/qt5 -isystem /usr/include/x86_64-linux-gnu/qt5/QtPrintSupport -isystem /usr/include/x86_64-linux-gnu/qt5/QtWidgets -isystem /usr/include/x86_64-linux-gnu/qt5/QtGui -isystem /usr/include/x86_64-linux-gnu/qt5/QtCore -I. -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64
 QMAKE         = /usr/lib/x86_64-linux-gnu/qt5/bin/qmake
 DEL_FILE      = rm -f
 CHK_DIR_EXISTS= test -d
@@ -36,7 +36,7 @@ DISTNAME      = ChronoPlotter1.0.0
 DISTDIR = /home/mncoppola/Desktop/code/ChronoPlotter-beta/.tmp/ChronoPlotter1.0.0
 LINK          = g++
 LFLAGS        = -m64 -Wl,-O1
-LIBS          = $(SUBLIBS) -L/usr/X11R6/lib64 -lQt5Svg -lQt5PrintSupport -lQt5Widgets -lQt5Gui -lQt5Core -lGL -lpthread 
+LIBS          = $(SUBLIBS) -L/usr/X11R6/lib64 -lQt5PrintSupport -lQt5Widgets -lQt5Gui -lQt5Core -lGL -lpthread 
 AR            = ar cqs
 RANLIB        = 
 SED           = sed
@@ -49,11 +49,13 @@ OBJECTS_DIR   = ./
 ####### Files
 
 SOURCES       = ChronoPlotter.cpp \
-		qcustomplot/qcustomplot.cpp qrc_resources.cpp \
+		qcustomplot/qcustomplot.cpp \
+		untar.cpp qrc_resources.cpp \
 		moc_ChronoPlotter.cpp \
 		moc_qcustomplot.cpp
 OBJECTS       = ChronoPlotter.o \
 		qcustomplot.o \
+		untar.o \
 		qrc_resources.o \
 		moc_ChronoPlotter.o \
 		moc_qcustomplot.o
@@ -115,8 +117,10 @@ DIST          = /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/spec_pre.prf \
 		/usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/yacc.prf \
 		/usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/lex.prf \
 		ChronoPlotter.pro ChronoPlotter.h \
-		qcustomplot/qcustomplot.h ChronoPlotter.cpp \
-		qcustomplot/qcustomplot.cpp
+		qcustomplot/qcustomplot.h \
+		untar.h ChronoPlotter.cpp \
+		qcustomplot/qcustomplot.cpp \
+		untar.cpp
 QMAKE_TARGET  = ChronoPlotter
 DESTDIR       = #avoid trailing-slash linebreak
 TARGET        = ChronoPlotter
@@ -206,7 +210,6 @@ Makefile: ChronoPlotter.pro /usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64/q
 		/usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/lex.prf \
 		ChronoPlotter.pro \
 		resources.qrc \
-		/usr/lib/x86_64-linux-gnu/libQt5Svg.prl \
 		/usr/lib/x86_64-linux-gnu/libQt5PrintSupport.prl \
 		/usr/lib/x86_64-linux-gnu/libQt5Widgets.prl \
 		/usr/lib/x86_64-linux-gnu/libQt5Gui.prl \
@@ -271,7 +274,6 @@ Makefile: ChronoPlotter.pro /usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64/q
 /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/lex.prf:
 ChronoPlotter.pro:
 resources.qrc:
-/usr/lib/x86_64-linux-gnu/libQt5Svg.prl:
 /usr/lib/x86_64-linux-gnu/libQt5PrintSupport.prl:
 /usr/lib/x86_64-linux-gnu/libQt5Widgets.prl:
 /usr/lib/x86_64-linux-gnu/libQt5Gui.prl:
@@ -291,8 +293,8 @@ distdir: FORCE
 	@test -d $(DISTDIR) || mkdir -p $(DISTDIR)
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
 	$(COPY_FILE) --parents resources.qrc $(DISTDIR)/
-	$(COPY_FILE) --parents ChronoPlotter.h qcustomplot/qcustomplot.h $(DISTDIR)/
-	$(COPY_FILE) --parents ChronoPlotter.cpp qcustomplot/qcustomplot.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents ChronoPlotter.h qcustomplot/qcustomplot.h untar.h $(DISTDIR)/
+	$(COPY_FILE) --parents ChronoPlotter.cpp qcustomplot/qcustomplot.cpp untar.cpp $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -326,10 +328,10 @@ compiler_moc_header_clean:
 	-$(DEL_FILE) moc_ChronoPlotter.cpp moc_qcustomplot.cpp
 moc_ChronoPlotter.cpp: qcustomplot/qcustomplot.h \
 		ChronoPlotter.h
-	/usr/lib/x86_64-linux-gnu/qt5/bin/moc $(DEFINES) -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64 -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtPrintSupport -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/5 -I/usr/include/x86_64-linux-gnu/c++/5 -I/usr/include/c++/5/backward -I/usr/lib/gcc/x86_64-linux-gnu/5/include -I/usr/local/include -I/usr/lib/gcc/x86_64-linux-gnu/5/include-fixed -I/usr/include/x86_64-linux-gnu -I/usr/include ChronoPlotter.h -o moc_ChronoPlotter.cpp
+	/usr/lib/x86_64-linux-gnu/qt5/bin/moc $(DEFINES) -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64 -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtPrintSupport -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/5 -I/usr/include/x86_64-linux-gnu/c++/5 -I/usr/include/c++/5/backward -I/usr/lib/gcc/x86_64-linux-gnu/5/include -I/usr/local/include -I/usr/lib/gcc/x86_64-linux-gnu/5/include-fixed -I/usr/include/x86_64-linux-gnu -I/usr/include ChronoPlotter.h -o moc_ChronoPlotter.cpp
 
 moc_qcustomplot.cpp: qcustomplot/qcustomplot.h
-	/usr/lib/x86_64-linux-gnu/qt5/bin/moc $(DEFINES) -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64 -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtPrintSupport -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/5 -I/usr/include/x86_64-linux-gnu/c++/5 -I/usr/include/c++/5/backward -I/usr/lib/gcc/x86_64-linux-gnu/5/include -I/usr/local/include -I/usr/lib/gcc/x86_64-linux-gnu/5/include-fixed -I/usr/include/x86_64-linux-gnu -I/usr/include qcustomplot/qcustomplot.h -o moc_qcustomplot.cpp
+	/usr/lib/x86_64-linux-gnu/qt5/bin/moc $(DEFINES) -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++-64 -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/home/mncoppola/Desktop/code/ChronoPlotter-beta -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtPrintSupport -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/5 -I/usr/include/x86_64-linux-gnu/c++/5 -I/usr/include/c++/5/backward -I/usr/lib/gcc/x86_64-linux-gnu/5/include -I/usr/local/include -I/usr/lib/gcc/x86_64-linux-gnu/5/include-fixed -I/usr/include/x86_64-linux-gnu -I/usr/include qcustomplot/qcustomplot.h -o moc_qcustomplot.cpp
 
 compiler_moc_source_make_all:
 compiler_moc_source_clean:
@@ -346,11 +348,16 @@ compiler_clean: compiler_rcc_clean compiler_moc_header_clean
 ####### Compile
 
 ChronoPlotter.o: ChronoPlotter.cpp qcustomplot/qcustomplot.h \
+		miniz.c \
+		untar.h \
 		ChronoPlotter.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ChronoPlotter.o ChronoPlotter.cpp
 
 qcustomplot.o: qcustomplot/qcustomplot.cpp qcustomplot/qcustomplot.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o qcustomplot.o qcustomplot/qcustomplot.cpp
+
+untar.o: untar.cpp 
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o untar.o untar.cpp
 
 qrc_resources.o: qrc_resources.cpp 
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o qrc_resources.o qrc_resources.cpp

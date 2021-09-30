@@ -19,7 +19,7 @@
 #include <QMainWindow>
 #include "qcustomplot/qcustomplot.h"
 
-#define CHRONOPLOTTER_VERSION "2.1.0-rc5"
+#define CHRONOPLOTTER_VERSION "2.1.1-rc1"
 
 #define SCATTER 0
 #define LINE_SD 1
@@ -117,11 +117,17 @@ struct SeatingSeries
 	int seriesNum;
 	QLabel *name;
 	QList<QPair<double, double> > coordinates;
+	QList<QPair<double, double> > coordinates_sighters;
 	QList<double> extremeSpread;
+	QList<double> extremeSpread_sighters;
 	QList<double> yStdev;
+	QList<double> yStdev_sighters;
 	QList<double> xStdev;
+	QList<double> xStdev_sighters;
 	QList<double> radialStdev;
+	QList<double> radialStdev_sighters;
 	QList<double> meanRadius;
+	QList<double> meanRadius_sighters;
 	int targetDistance; // in yards
 	QString firstDate;
 	QString firstTime;
@@ -147,6 +153,8 @@ class SeatingDepthTest : public QWidget
 		void groupSizeCheckBoxChanged(bool);
 		void gsdCheckBoxChanged(bool);
 		void trendCheckBoxChanged(bool);
+		void includeSightersCheckBoxChanged(bool);
+		void overrideSpacingCheckBoxChanged(bool);
 		void cartridgeMeasurementTypeChanged(int);
 		void groupMeasurementTypeChanged(int);
 		void importedGroupMeasurementTypeChanged(int);
@@ -164,6 +172,7 @@ class SeatingDepthTest : public QWidget
 		void saveGraph(bool);
 
 	protected:
+		void updateDisplayedData ( void );
 		double calculateES ( QList<QPair<double, double> > );
 		double calculateYStdev ( QList<QPair<double, double> > );
 		double calculateXStdev ( QList<QPair<double, double> > );
@@ -171,7 +180,8 @@ class SeatingDepthTest : public QWidget
 		static double pairSumX ( double, const QPair<double, double> );
 		static double pairSumY ( double, const QPair<double, double> );
 		double calculateMR ( QList<QPair<double, double> > );
-		QList<SeatingSeries *> ExtractShotMarkerSeries ( QTextStream & );
+		QList<SeatingSeries *> ExtractShotMarkerSeriesTar ( QString );
+		QList<SeatingSeries *> ExtractShotMarkerSeriesCsv ( QTextStream & );
 		void optionCheckBoxChanged(QCheckBox *, QLabel *, QComboBox *);
 		void DisplaySeriesData ( void );
 		void renderGraph ( bool );
@@ -202,6 +212,8 @@ class SeatingDepthTest : public QWidget
 		QCheckBox *groupSizeCheckBox;
 		QCheckBox *gsdCheckBox;
 		QCheckBox *trendCheckBox;
+		QCheckBox *includeSightersCheckBox;
+		QCheckBox *overrideSpacingCheckBox;
 		QComboBox *groupSizeLocation;
 		QComboBox *gsdLocation;
 		QComboBox *trendLineType;
@@ -226,6 +238,7 @@ class PowderTest : public QWidget
 		void avgCheckBoxChanged(bool);
 		void vdCheckBoxChanged(bool);
 		void trendCheckBoxChanged(bool);
+		void overrideSpacingCheckBoxChanged(bool);
 		void loadNewChronographData(bool);
 		void selectLabRadarDirectory(bool);
 		void selectMagnetoSpeedFile(bool);
@@ -277,6 +290,7 @@ class PowderTest : public QWidget
 		QCheckBox *avgCheckBox;
 		QCheckBox *vdCheckBox;
 		QCheckBox *trendCheckBox;
+		QCheckBox *overrideSpacingCheckBox;
 		QComboBox *esLocation;
 		QComboBox *sdLocation;
 		QComboBox *avgLocation;

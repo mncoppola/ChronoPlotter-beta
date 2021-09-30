@@ -7,9 +7,9 @@ TARGET = ChronoPlotter
 INCLUDEPATH += .
 
 # Input
-HEADERS += ChronoPlotter.h qcustomplot/qcustomplot.h
-SOURCES += ChronoPlotter.cpp qcustomplot/qcustomplot.cpp
-QT += widgets svg printsupport
+HEADERS += ChronoPlotter.h qcustomplot/qcustomplot.h untar.h
+SOURCES += ChronoPlotter.cpp qcustomplot/qcustomplot.cpp untar.cpp
+QT += widgets printsupport
 
 RESOURCES += resources.qrc
 
