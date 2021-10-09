@@ -19,7 +19,7 @@
 #include <QMainWindow>
 #include "qcustomplot/qcustomplot.h"
 
-#define CHRONOPLOTTER_VERSION "2.1.1-rc1"
+#define CHRONOPLOTTER_VERSION "2.2.0-rc1"
 
 #define SCATTER 0
 #define LINE_SD 1
@@ -48,7 +48,10 @@
 #define MIL 3
 
 #define ABOVE_STRING 0
-#define BELOW_STRING 0
+#define BELOW_STRING 1
+
+#define PROPORTIONAL 0
+#define CONSTANT 1
 
 class MainWindow : public QMainWindow
 {
@@ -154,7 +157,7 @@ class SeatingDepthTest : public QWidget
 		void gsdCheckBoxChanged(bool);
 		void trendCheckBoxChanged(bool);
 		void includeSightersCheckBoxChanged(bool);
-		void overrideSpacingCheckBoxChanged(bool);
+		void xAxisSpacingChanged(int);
 		void cartridgeMeasurementTypeChanged(int);
 		void groupMeasurementTypeChanged(int);
 		void importedGroupMeasurementTypeChanged(int);
@@ -182,7 +185,7 @@ class SeatingDepthTest : public QWidget
 		double calculateMR ( QList<QPair<double, double> > );
 		QList<SeatingSeries *> ExtractShotMarkerSeriesTar ( QString );
 		QList<SeatingSeries *> ExtractShotMarkerSeriesCsv ( QTextStream & );
-		void optionCheckBoxChanged(QCheckBox *, QLabel *, QComboBox *);
+		void optionCheckBoxChanged(QCheckBox *, QComboBox *);
 		void DisplaySeriesData ( void );
 		void renderGraph ( bool );
 
@@ -209,11 +212,11 @@ class SeatingDepthTest : public QWidget
 		QComboBox *cartridgeMeasurementType;
 		QComboBox *groupMeasurementType;
 		QComboBox *groupUnits;
+		QComboBox *xAxisSpacing;
 		QCheckBox *groupSizeCheckBox;
 		QCheckBox *gsdCheckBox;
 		QCheckBox *trendCheckBox;
 		QCheckBox *includeSightersCheckBox;
-		QCheckBox *overrideSpacingCheckBox;
 		QComboBox *groupSizeLocation;
 		QComboBox *gsdLocation;
 		QComboBox *trendLineType;
@@ -238,11 +241,12 @@ class PowderTest : public QWidget
 		void avgCheckBoxChanged(bool);
 		void vdCheckBoxChanged(bool);
 		void trendCheckBoxChanged(bool);
-		void overrideSpacingCheckBoxChanged(bool);
+		void xAxisSpacingChanged(int);
 		void loadNewChronographData(bool);
 		void selectLabRadarDirectory(bool);
 		void selectMagnetoSpeedFile(bool);
 		void selectProChronoFile(bool);
+		void selectShotMarkerFile(bool);
 		void manualDataEntry(bool);
 		void rrClicked(bool);
 		void addNewClicked(bool);
@@ -257,10 +261,11 @@ class PowderTest : public QWidget
 		void saveGraph(bool);
 
 	protected:
-		void optionCheckBoxChanged(QCheckBox *, QLabel *, QComboBox *);
+		void optionCheckBoxChanged(QCheckBox *, QComboBox *);
 		ChronoSeries *ExtractLabRadarSeries ( QTextStream & );
 		QList<ChronoSeries *> ExtractMagnetoSpeedSeries ( QTextStream & );
 		QList<ChronoSeries *> ExtractProChronoSeries ( QTextStream & );
+		QList<ChronoSeries *> ExtractShotMarkerSeriesTar ( QString );
 		void DisplaySeriesData ( void );
 		void renderGraph ( bool );
 
@@ -269,6 +274,7 @@ class PowderTest : public QWidget
 		QString prevLabRadarDir;
 		QString prevMagnetoSpeedDir;
 		QString prevProChronoDir;
+		QString prevShotMarkerDir;
 		QString prevSaveDir;
 		QStackedWidget *stackedWidget;
 		QWidget *scrollWidget;
@@ -285,12 +291,12 @@ class PowderTest : public QWidget
 		QPushButton *addNewButton;
 		QComboBox *graphType;
 		QComboBox *velocityUnits;
+		QComboBox *xAxisSpacing;
 		QCheckBox *esCheckBox;
 		QCheckBox *sdCheckBox;
 		QCheckBox *avgCheckBox;
 		QCheckBox *vdCheckBox;
 		QCheckBox *trendCheckBox;
-		QCheckBox *overrideSpacingCheckBox;
 		QComboBox *esLocation;
 		QComboBox *sdLocation;
 		QComboBox *avgLocation;

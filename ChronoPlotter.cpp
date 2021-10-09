@@ -397,6 +397,7 @@ PowderTest::PowderTest ( QWidget *parent )
 	prevLabRadarDir = QDir::homePath();
 	prevMagnetoSpeedDir = QDir::homePath();
 	prevProChronoDir = QDir::homePath();
+	prevShotMarkerDir = QDir::homePath();
 	prevSaveDir = QDir::homePath();
 
 	/* Left panel */
@@ -427,6 +428,13 @@ PowderTest::PowderTest ( QWidget *parent )
 	pcFileButton->setMinimumHeight(50);
 	pcFileButton->setMaximumHeight(50);
 
+	QPushButton *smFileButton = new QPushButton("Select ShotMarker file");
+	connect(smFileButton, SIGNAL(clicked(bool)), this, SLOT(selectShotMarkerFile(bool)));
+	smFileButton->setMinimumWidth(300);
+	smFileButton->setMaximumWidth(300);
+	smFileButton->setMinimumHeight(50);
+	smFileButton->setMaximumHeight(50);
+
 	QPushButton *manualEntryButton = new QPushButton("Manual data entry");
 	connect(manualEntryButton, SIGNAL(clicked(bool)), this, SLOT(manualDataEntry(bool)));
 	manualEntryButton->setMinimumWidth(300);
@@ -444,6 +452,8 @@ PowderTest::PowderTest ( QWidget *parent )
 	placeholderLayout->setAlignment(msFileButton, Qt::AlignCenter);
 	placeholderLayout->addWidget(pcFileButton);
 	placeholderLayout->setAlignment(pcFileButton, Qt::AlignCenter);
+	placeholderLayout->addWidget(smFileButton);
+	placeholderLayout->setAlignment(smFileButton, Qt::AlignCenter);
 	placeholderLayout->addWidget(manualEntryButton);
 	placeholderLayout->setAlignment(manualEntryButton, Qt::AlignCenter);
 	placeholderLayout->addStretch(0);
@@ -503,9 +513,15 @@ PowderTest::PowderTest ( QWidget *parent )
 	optionsFormLayout->addRow(new QLabel("Weight units:"), weightUnits);
 
 	velocityUnits = new QComboBox();
-	velocityUnits->addItem("feet per second (fps)");
+	velocityUnits->addItem("feet per second (ft/s)");
 	velocityUnits->addItem("meters per second (m/s)");
 	optionsFormLayout->addRow(new QLabel("Velocity units:"), velocityUnits);
+
+	xAxisSpacing = new QComboBox();
+	xAxisSpacing->addItem("Proportional");
+	xAxisSpacing->addItem("Constant");
+	connect(xAxisSpacing, SIGNAL(currentIndexChanged(int)), this, SLOT(xAxisSpacingChanged(int)));
+	optionsFormLayout->addRow(new QLabel("X-axis spacing:"), xAxisSpacing);
 
 	optionsLayout->addLayout(optionsFormLayout);
 	optionsLayout->addWidget(new QHLine());
@@ -578,16 +594,6 @@ PowderTest::PowderTest ( QWidget *parent )
 	trendLineType->setEnabled(false);
 	trendLayout->addWidget(trendLineType);
 	optionsLayout->addLayout(trendLayout);
-
-	QHBoxLayout *overrideSpacingLayout = new QHBoxLayout();
-	overrideSpacingCheckBox = new QCheckBox();
-	overrideSpacingCheckBox->setChecked(false);
-	connect(overrideSpacingCheckBox, SIGNAL(clicked(bool)), this, SLOT(overrideSpacingCheckBoxChanged(bool)));
-	overrideSpacingLayout->addWidget(overrideSpacingCheckBox, 0);
-	QLabel *overrideSpacingLabel = new QLabel("Override default x-axis spacing");
-	overrideSpacingLabel->setFixedHeight(trendLineType->sizeHint().height());
-	overrideSpacingLayout->addWidget(overrideSpacingLabel, 1);
-	optionsLayout->addLayout(overrideSpacingLayout);
 
 	// Don't resize row heights if window height changes
 	optionsLayout->addStretch(0);
@@ -787,7 +793,7 @@ void PowderTest::addNewClicked ( bool state )
 	const char *velocityUnits2;
 	if ( velocityUnits->currentIndex() == FPS )
 	{
-		velocityUnits2 = "fps";
+		velocityUnits2 = "ft/s";
 	}
 	else
 	{
@@ -862,7 +868,7 @@ void PowderTest::enterDataClicked ( bool state )
 				const char *velocityUnits2;
 				if ( velocityUnits->currentIndex() == FPS )
 				{
-					velocityUnits2 = "fps";
+					velocityUnits2 = "ft/s";
 				}
 				else
 				{
@@ -1032,7 +1038,7 @@ void PowderTest::manualDataEntry ( bool state )
 	const char *velocityUnits2;
 	if ( velocityUnits->currentIndex() == FPS )
 	{
-		velocityUnits2 = "fps";
+		velocityUnits2 = "ft/s";
 	}
 	else
 	{
@@ -1460,6 +1466,46 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 
 	std::sort(seriesToGraph.begin(), seriesToGraph.end(), ChargeWeightComparator);
 
+	/* Check if any cartridge lengths are duplicated. We can rely on series being sorted and not zero. */
+
+	if ( xAxisSpacing->currentIndex() == PROPORTIONAL )
+	{
+		double lastChargeWeight = 0;
+		for ( int i = 0; i < seriesToGraph.size(); i++ )
+		{
+			ChronoSeries *series = seriesToGraph.at(i);
+
+			double chargeWeight = series->chargeWeight->value();
+
+			if ( chargeWeight == lastChargeWeight )
+			{
+				qDebug() << "Duplicate charge weight detected" << chargeWeight << ", prompting user to switch to constant x-axis spacing";
+
+				QMessageBox::StandardButton reply;
+				reply = QMessageBox::question(this, "Duplicate charge weights", "Duplicate charge weights detected. Switching graph to constant spacing mode.", QMessageBox::Ok | QMessageBox::Cancel);
+
+				if ( reply == QMessageBox::Ok )
+				{
+					qDebug() << "Set x-axis spacing to constant";
+
+					xAxisSpacing->setCurrentIndex(CONSTANT);
+					break;
+				}
+				else
+				{
+					qDebug() << "User cancel, bailing out";
+					return;
+				}
+			}
+
+			lastChargeWeight = chargeWeight;
+		}
+	}
+	else
+	{
+		qDebug() << "Constant x-axis spacing selected, skipping duplicate check";
+	}
+
 	/* Collect the data to graph */
 
 	QSharedPointer<QCPAxisTickerText> textTicker(new QCPAxisTickerText);
@@ -1495,7 +1541,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 		 * incrementing index and overrides the xAxis ticker to display custom tick labels.
 		 */
 
-		if ( overrideSpacingCheckBox->isChecked() )
+		if ( xAxisSpacing->currentIndex() == CONSTANT )
 		{
 			xAvgPoints.push_back(i);
 		}
@@ -1509,7 +1555,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 		{
 			for ( int j = 0; j < totalShots; j++ )
 			{
-				if ( overrideSpacingCheckBox->isChecked() )
+				if ( xAxisSpacing->currentIndex() == CONSTANT )
 				{
 					xPoints.push_back(i);
 					allXPoints.push_back(i);
@@ -1527,7 +1573,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 		{
 			for ( int j = 0; j < totalShots; j++ )
 			{
-				if ( overrideSpacingCheckBox->isChecked() )
+				if ( xAxisSpacing->currentIndex() == CONSTANT )
 				{
 					allXPoints.push_back(i);
 				}
@@ -1538,7 +1584,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 				allYPoints.push_back(series->muzzleVelocities.at(j));
 			}
 
-			if ( overrideSpacingCheckBox->isChecked() )
+			if ( xAxisSpacing->currentIndex() == CONSTANT )
 			{
 				xPoints.push_back(i);
 			}
@@ -1550,7 +1596,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 			yError.push_back(stdev);
 		}
 
-		if ( overrideSpacingCheckBox->isChecked() )
+		if ( xAxisSpacing->currentIndex() == CONSTANT )
 		{
 			textTicker->addTick(i, QString::number(series->chargeWeight->value()));
 		}
@@ -1648,7 +1694,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 	const char *velocityUnits2;
 	if ( velocityUnits->currentIndex() == FPS )
 	{
-		velocityUnits2 = "fps";
+		velocityUnits2 = "ft/s";
 	}
 	else
 	{
@@ -1759,7 +1805,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 			rect->setPen(rectPen);
 			rect->topLeft->setType(QCPItemPosition::ptAbsolute);
 			rect->bottomRight->setType(QCPItemPosition::ptAbsolute);
-			if ( overrideSpacingCheckBox->isChecked() )
+			if ( xAxisSpacing->currentIndex() == CONSTANT )
 			{
 				rect->topLeft->setCoords(customPlot->xAxis->coordToPixel(i) - 7, customPlot->yAxis->coordToPixel(velocityMax) - 7);
 				rect->bottomRight->setCoords(customPlot->xAxis->coordToPixel(i) + 7, customPlot->yAxis->coordToPixel(velocityMin) + 7);
@@ -1875,7 +1921,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 		belowAnnotation->setFont(QFont("DejaVu Sans", scaleFontSize(9)));
 		belowAnnotation->setColor(QColor("#4d4d4d"));
 		belowAnnotation->position->setType(QCPItemPosition::ptAbsolute);
-		if ( overrideSpacingCheckBox->isChecked() )
+		if ( xAxisSpacing->currentIndex() == CONSTANT )
 		{
 			belowAnnotation->position->setCoords(customPlot->xAxis->coordToPixel(i), customPlot->yAxis->coordToPixel(yCoordBelow) + 10);
 		}
@@ -1895,7 +1941,7 @@ void PowderTest::renderGraph ( bool displayGraphPreview )
 		aboveAnnotation->setFont(QFont("DejaVu Sans", scaleFontSize(9)));
 		aboveAnnotation->setColor(QColor("#4d4d4d"));
 		aboveAnnotation->position->setType(QCPItemPosition::ptAbsolute);
-		if ( overrideSpacingCheckBox->isChecked() )
+		if ( xAxisSpacing->currentIndex() == CONSTANT )
 		{
 			aboveAnnotation->position->setCoords(customPlot->xAxis->coordToPixel(i), customPlot->yAxis->coordToPixel(yCoordAbove) - 10);
 		}
@@ -2133,7 +2179,7 @@ void PowderTest::velocityUnitsChanged ( int index )
 
 	if ( index == FPS )
 	{
-		velocityUnit = "fps";
+		velocityUnit = "ft/s";
 	}
 	else
 	{
@@ -2166,42 +2212,42 @@ void PowderTest::esCheckBoxChanged ( bool state )
 {
 	qDebug() << "esCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(esCheckBox, esLabel, esLocation);
+	optionCheckBoxChanged(esCheckBox, esLocation);
 }
 
 void PowderTest::sdCheckBoxChanged ( bool state )
 {
 	qDebug() << "sdsCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(sdCheckBox, sdLabel, sdLocation);
+	optionCheckBoxChanged(sdCheckBox, sdLocation);
 }
 
 void PowderTest::avgCheckBoxChanged ( bool state )
 {
 	qDebug() << "avgCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(avgCheckBox, avgLabel, avgLocation);
+	optionCheckBoxChanged(avgCheckBox, avgLocation);
 }
 
 void PowderTest::vdCheckBoxChanged ( bool state )
 {
 	qDebug() << "vdCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(vdCheckBox, vdLabel, vdLocation);
+	optionCheckBoxChanged(vdCheckBox, vdLocation);
 }
 
 void PowderTest::trendCheckBoxChanged ( bool state )
 {
 	qDebug() << "trendCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(trendCheckBox, trendLabel, trendLineType);
+	optionCheckBoxChanged(trendCheckBox, trendLineType);
 }
 
-void PowderTest::overrideSpacingCheckBoxChanged ( bool state )
+void PowderTest::xAxisSpacingChanged ( int index )
 {
-	qDebug() << "overrideSpacingCheckBoxChanged state =" << state;
+	qDebug() << "xAxisSpacingChanged index =" << index;
 
-	if ( overrideSpacingCheckBox->isChecked() )
+	if ( index == CONSTANT )
 	{
 		trendCheckBox->setChecked(false);
 		trendCheckBox->setEnabled(false);
@@ -2216,7 +2262,7 @@ void PowderTest::overrideSpacingCheckBoxChanged ( bool state )
 	}
 }
 
-void PowderTest::optionCheckBoxChanged ( QCheckBox *checkBox, QLabel *label, QComboBox *comboBox )
+void PowderTest::optionCheckBoxChanged ( QCheckBox *checkBox, QComboBox *comboBox )
 {
 	if ( checkBox->isChecked() )
 	{
@@ -2426,6 +2472,7 @@ ChronoSeries *PowderTest::ExtractLabRadarSeries ( QTextStream &csv )
 		else if ( rows.at(0).compare("Units velocity") == 0 )
 		{
 			series->velocityUnits = rows.at(1);
+			series->velocityUnits.replace("fps", "ft/s");
 			qDebug() << "velocityUnits =" << series->velocityUnits;
 		}
 	}
@@ -2892,6 +2939,258 @@ QList<ChronoSeries *> PowderTest::ExtractProChronoSeries ( QTextStream &csv )
 	{
 		ChronoSeries *series = allSeries.at(i);
 		series->seriesNum = seriesNum;
+		seriesNum++;
+	}
+
+	return allSeries;
+}
+
+void PowderTest::selectShotMarkerFile ( bool state )
+{
+	qDebug() << "selectShotMarkerFile state =" << state;
+
+	qDebug() << "Previous directory:" << prevShotMarkerDir;
+
+	QString path = QFileDialog::getOpenFileName(this, "Select file", prevShotMarkerDir, "ShotMarker files (*.tar)");
+	prevShotMarkerDir = path;
+
+	qDebug() << "Selected file:" << path;
+
+	if ( path.isEmpty() )
+	{
+		qDebug() << "User didn't select a file, bail";
+		return;
+	}
+
+	seriesData.clear();
+
+	/*
+	 * ShotMarker only records velocity data in .tar export files
+	 */
+
+	QList<ChronoSeries *> allSeries;
+
+	if ( path.endsWith(".tar") )
+	{
+		qDebug() << "ShotMarker .tar bundle";
+
+		allSeries = ExtractShotMarkerSeriesTar(path);
+	}
+	else
+	{
+		qDebug() << "ShotMarker .csv export, bailing";
+
+		QMessageBox *msg = new QMessageBox();
+		msg->setIcon(QMessageBox::Critical);
+		msg->setText(QString("Only ShotMarker .tar files are supported for velocity data.\n\nSelected: '%1'").arg(path));
+		msg->setWindowTitle("Error");
+		msg->exec();
+
+		return;
+	}
+
+	qDebug() << "Got allSeries with size" << allSeries.size();
+
+	if ( ! allSeries.empty() )
+	{
+		qDebug() << "Detected ShotMarker file";
+
+		for ( int i = 0; i < allSeries.size(); i++ )
+		{
+			ChronoSeries *series = allSeries.at(i);
+
+			series->enabled = new QCheckBox();
+			series->enabled->setChecked(true);
+
+			series->chargeWeight = new QDoubleSpinBox();
+			series->chargeWeight->setDecimals(2);
+			series->chargeWeight->setSingleStep(0.1);
+			series->chargeWeight->setMinimumWidth(100);
+			series->chargeWeight->setMaximumWidth(100);
+
+			seriesData.append(series);
+		}
+	}
+
+	/* We're finished parsing the file */
+
+	if ( seriesData.empty() )
+	{
+		qDebug() << "Didn't find any shot data in this file, bail";
+
+		QMessageBox *msg = new QMessageBox();
+		msg->setIcon(QMessageBox::Critical);
+		msg->setText(QString("Unable to find ShotMarker data in '%1'").arg(path));
+		msg->setWindowTitle("Error");
+		msg->exec();
+	}
+	else
+	{
+		qDebug() << "Detected ShotMarker file" << path;
+
+		QMessageBox *msg = new QMessageBox();
+		msg->setIcon(QMessageBox::Information);
+		msg->setText(QString("Detected ShotMarker data\n\nUsing '%1'").arg(path));
+		msg->setWindowTitle("Success");
+		msg->exec();
+
+		// Proceed to display the data
+		DisplaySeriesData();
+	}
+}
+
+QList<ChronoSeries *> PowderTest::ExtractShotMarkerSeriesTar ( QString path )
+{
+	QList<ChronoSeries *> allSeries;
+	ChronoSeries *curSeries = new ChronoSeries();
+	QTemporaryDir tempDir;
+	int ret;
+
+	if ( ! tempDir.isValid() )
+	{
+		qDebug() << "Temp directory is NOT valid";
+	}
+
+	qDebug() << "Temporary directory:" << tempDir.path();
+
+	/*
+	 * ShotMarker .tar files contain one .z file for each string being exported.
+	 * Each .z file is a zlib-compressed JSON file containing shot data for that string.
+	 */
+
+	QFile rf(path);
+	if ( ! rf.open(QIODevice::ReadOnly) )
+	{
+		qDebug() << "Failed to open ShotMarker .tar file:" << path;
+		return allSeries;
+	}
+
+	ret = untar(rf, tempDir.path());
+	if ( ret )
+	{
+		qDebug() << "Error while extracting ShotMarker .tar file:" << path;
+		return allSeries;
+	}
+
+	/*
+	 * We have a temp directory with our extracted files in it. Now iterate over each .z
+	 * file and decompress it.
+	 */
+
+	QDir dir(tempDir.path());
+	QStringList stringFiles = dir.entryList(QStringList() << "*.z", QDir::Files);
+
+	qDebug() << "iterating over files:";
+	int seriesNum = 1;
+	foreach ( QString filename, stringFiles )
+	{
+		QString path(tempDir.path());
+		path.append("/");
+		path.append(filename);
+		qDebug() << path;
+
+
+		QFile file(path);
+		file.open(QIODevice::ReadOnly);
+		QByteArray buf = file.readAll();
+		qDebug() << "file:" << path << ", size:" << buf.size();
+
+		// 1mb ought to be enough for anybody!
+		unsigned char *destBuf = (unsigned char *)malloc(1024 * 1024);
+		qDebug() << "malloc returned" << (void *)destBuf;
+		if ( destBuf == NULL )
+		{
+			qDebug() << "malloc returned NULL! skipping... but we should really throw an exception here.";
+			continue;
+		}
+
+		mz_ulong uncomp_len = 1024 * 1024;
+		qDebug() << "calling uncompress 1 with destBuf=" << (void *)destBuf << ", uncomp_len=" << uncomp_len << ", buf.data()=" << buf.data() << ", buf.size()=" << buf.size();
+		ret = uncompress(destBuf, &uncomp_len, (const unsigned char *)buf.data(), buf.size());
+
+		qDebug() << "output size:" << uncomp_len;
+		if ( ret != MZ_OK )
+		{
+			qDebug() << "Failed to uncompress, skipping..." << path;
+			free(destBuf);
+			continue;
+		}
+
+		//qDebug() << "calling uncompress 2 with destBuf=" << (void *)destBuf << ", uncomp_len=" << uncomp_len << ", buf.data()=" << buf.data() << ", buf.size()=" << buf.size();
+		//uncompress(destBuf, &uncomp_len, (const unsigned char *)buf.data(), buf.size());
+		QByteArray ba = QByteArray::fromRawData((const char *)destBuf, uncomp_len);
+		//qDebug() << "decompressed" << uncomp_len << ":" << ba;
+
+		QJsonParseError parseError;
+		QJsonDocument jsonDoc;
+		jsonDoc = QJsonDocument::fromJson(ba, &parseError);
+
+		if ( parseError.error != QJsonParseError::NoError )
+		{
+			qDebug() << "JSON parse error, skipping... at" << parseError.offset << ":" << parseError.errorString();
+			free(destBuf);
+			continue;
+		}
+
+		QJsonObject jsonObj = jsonDoc.object();
+
+		/* We have a JSON file containing a single series */
+
+		qDebug() << "Beginning new series";
+
+		curSeries = new ChronoSeries();
+		curSeries->isValid = false;
+		curSeries->seriesNum = seriesNum;
+		qDebug() << "name =" << jsonObj["name"].toString();
+		curSeries->name = new QLabel(jsonObj["name"].toString());
+		curSeries->velocityUnits = "ft/s";
+		curSeries->deleted = false;
+		QDateTime dateTime;
+		dateTime.setMSecsSinceEpoch(jsonObj["ts"].toVariant().toULongLong());
+		curSeries->firstDate = dateTime.date().toString(Qt::TextDate);
+		curSeries->firstTime = dateTime.time().toString(Qt::TextDate);
+
+		qDebug() << "setting date =" << curSeries->firstDate << " time =" << curSeries->firstTime << "from ts" << jsonObj["ts"].toVariant().toULongLong();
+
+		foreach ( const QJsonValue& shot, jsonObj["shots"].toArray() )
+		{
+			// convert from m/s to ft/s
+			int velocity = shot["v"].toDouble() * 1.0936133 * 3; // the result is cast to an int
+
+			if ( shot["hidden"].toBool() )
+			{
+				// hidden shot
+
+				qDebug() << "ignoring hidden shot" << shot["display_text"];
+			}
+			else if ( shot["sighter"].toBool() )
+			{
+				// sighter shot
+
+				qDebug() << "ignoring sighter shot" << shot["display_text"];
+			}
+			else
+			{
+				// shot for record
+
+				qDebug() << "adding velocity" << velocity << "from m/s:" << shot["v"].toDouble();
+				curSeries->muzzleVelocities.append(velocity);
+			}
+
+		}
+
+		// Finish parsing the current series.
+		qDebug() << "End of JSON";
+
+		if ( curSeries->muzzleVelocities.size() > 0 )
+		{
+			qDebug() << "Adding curSeries to allSeries";
+
+			allSeries.append(curSeries);
+		}
+
+		free(destBuf);
+
 		seriesNum++;
 	}
 
@@ -4008,6 +4307,12 @@ SeatingDepthTest::SeatingDepthTest ( QWidget *parent )
 	groupUnits->addItem("milliradians (mil)");
 	optionsFormLayout->addRow(new QLabel("Group size units:"), groupUnits);
 
+	xAxisSpacing = new QComboBox();
+	xAxisSpacing->addItem("Proportional");
+	xAxisSpacing->addItem("Constant");
+	connect(xAxisSpacing, SIGNAL(currentIndexChanged(int)), this, SLOT(xAxisSpacingChanged(int)));
+	optionsFormLayout->addRow(new QLabel("X-axis spacing:"), xAxisSpacing);
+
 	optionsLayout->addLayout(optionsFormLayout);
 	optionsLayout->addWidget(new QHLine());
 
@@ -4063,16 +4368,6 @@ SeatingDepthTest::SeatingDepthTest ( QWidget *parent )
 	includeSightersLabel->setFixedHeight(trendLineType->sizeHint().height());
 	includeSightersLayout->addWidget(includeSightersLabel, 1);
 	optionsLayout->addLayout(includeSightersLayout);
-
-	QHBoxLayout *overrideSpacingLayout = new QHBoxLayout();
-	overrideSpacingCheckBox = new QCheckBox();
-	overrideSpacingCheckBox->setChecked(false);
-	connect(overrideSpacingCheckBox, SIGNAL(clicked(bool)), this, SLOT(overrideSpacingCheckBoxChanged(bool)));
-	overrideSpacingLayout->addWidget(overrideSpacingCheckBox, 0);
-	QLabel *overrideSpacingLabel = new QLabel("Override default x-axis spacing");
-	overrideSpacingLabel->setFixedHeight(trendLineType->sizeHint().height());
-	overrideSpacingLayout->addWidget(overrideSpacingLabel, 1);
-	optionsLayout->addLayout(overrideSpacingLayout);
 
 	// Don't resize row heights if window height changes
 	optionsLayout->addStretch(0);
@@ -4511,21 +4806,21 @@ void SeatingDepthTest::groupSizeCheckBoxChanged ( bool state )
 {
 	qDebug() << "groupSizeCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(groupSizeCheckBox, groupSizeLabel, groupSizeLocation);
+	optionCheckBoxChanged(groupSizeCheckBox, groupSizeLocation);
 }
 
 void SeatingDepthTest::gsdCheckBoxChanged ( bool state )
 {
 	qDebug() << "gsdCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(gsdCheckBox, gsdLabel, gsdLocation);
+	optionCheckBoxChanged(gsdCheckBox, gsdLocation);
 }
 
 void SeatingDepthTest::trendCheckBoxChanged ( bool state )
 {
 	qDebug() << "trendCheckBoxChanged state =" << state;
 
-	optionCheckBoxChanged(trendCheckBox, trendLabel, trendLineType);
+	optionCheckBoxChanged(trendCheckBox, trendLineType);
 }
 
 void SeatingDepthTest::updateDisplayedData ( void )
@@ -4665,11 +4960,11 @@ void SeatingDepthTest::includeSightersCheckBoxChanged ( bool state )
 	updateDisplayedData();
 }
 
-void SeatingDepthTest::overrideSpacingCheckBoxChanged ( bool state )
+void SeatingDepthTest::xAxisSpacingChanged ( int index )
 {
-	qDebug() << "overrideSpacingCheckBoxChanged state =" << state;
+	qDebug() << "xAxisSpacingChanged index =" << index;
 
-	if ( overrideSpacingCheckBox->isChecked() )
+	if ( index == CONSTANT )
 	{
 		trendCheckBox->setChecked(false);
 		trendCheckBox->setEnabled(false);
@@ -4685,7 +4980,7 @@ void SeatingDepthTest::overrideSpacingCheckBoxChanged ( bool state )
 }
 
 
-void SeatingDepthTest::optionCheckBoxChanged ( QCheckBox *checkBox, QLabel *label, QComboBox *comboBox )
+void SeatingDepthTest::optionCheckBoxChanged ( QCheckBox *checkBox, QComboBox *comboBox )
 {
 	if ( checkBox->isChecked() )
 	{
@@ -4858,6 +5153,46 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 
 	std::sort(seriesToGraph.begin(), seriesToGraph.end(), CartridgeLengthComparator);
 
+	/* Check if any cartridge lengths are duplicated. We can rely on series being sorted and not zero. */
+
+	if ( xAxisSpacing->currentIndex() == PROPORTIONAL )
+	{
+		double lastCartridgeLength = 0;
+		for ( int i = 0; i < seriesToGraph.size(); i++ )
+		{
+			SeatingSeries *series = seriesToGraph.at(i);
+
+			double cartridgeLength = series->cartridgeLength->value();
+
+			if ( cartridgeLength == lastCartridgeLength )
+			{
+				qDebug() << "Duplicate cartridge length detected" << cartridgeLength << ", prompting user to switch to constant x-axis spacing";
+
+				QMessageBox::StandardButton reply;
+				reply = QMessageBox::question(this, "Duplicate cartridge lengths", "Duplicate cartridge lengths detected. Switching graph to constant spacing mode.", QMessageBox::Ok | QMessageBox::Cancel);
+
+				if ( reply == QMessageBox::Ok )
+				{
+					qDebug() << "Set x-axis spacing to constant";
+
+					xAxisSpacing->setCurrentIndex(CONSTANT);
+					break;
+				}
+				else
+				{
+					qDebug() << "User cancel, bailing out";
+					return;
+				}
+			}
+
+			lastCartridgeLength = cartridgeLength;
+		}
+	}
+	else
+	{
+		qDebug() << "Constant x-axis spacing selected, skipping duplicate check";
+	}
+
 	/* Collect the data to graph */
 
 	QSharedPointer<QCPAxisTickerText> textTicker(new QCPAxisTickerText);
@@ -4939,7 +5274,7 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 		 * incrementing index and overrides the xAxis ticker to display custom tick labels.
 		 */
 
-		if ( overrideSpacingCheckBox->isChecked() )
+		if ( xAxisSpacing->currentIndex() == CONSTANT )
 		{
 			xPoints.push_back(i);
 			textTicker->addTick(i, QString::number(cartridgeLength));
@@ -5212,7 +5547,7 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 		belowAnnotation->setFont(QFont("DejaVu Sans", scaleFontSize(9)));
 		belowAnnotation->setColor(QColor("#4d4d4d"));
 		belowAnnotation->position->setType(QCPItemPosition::ptAbsolute);
-		if ( overrideSpacingCheckBox->isChecked() )
+		if ( xAxisSpacing->currentIndex() == CONSTANT )
 		{
 			belowAnnotation->position->setCoords(customPlot->xAxis->coordToPixel(i), customPlot->yAxis->coordToPixel(yCoord) + 10);
 		}
@@ -5232,7 +5567,7 @@ void SeatingDepthTest::renderGraph ( bool displayGraphPreview )
 		aboveAnnotation->setFont(QFont("DejaVu Sans", scaleFontSize(9)));
 		aboveAnnotation->setColor(QColor("#4d4d4d"));
 		aboveAnnotation->position->setType(QCPItemPosition::ptAbsolute);
-		if ( overrideSpacingCheckBox->isChecked() )
+		if ( xAxisSpacing->currentIndex() == CONSTANT )
 		{
 			aboveAnnotation->position->setCoords(customPlot->xAxis->coordToPixel(i), customPlot->yAxis->coordToPixel(yCoord) - 10);
 		}
