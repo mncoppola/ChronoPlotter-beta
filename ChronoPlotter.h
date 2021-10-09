@@ -19,7 +19,7 @@
 #include <QMainWindow>
 #include "qcustomplot/qcustomplot.h"
 
-#define CHRONOPLOTTER_VERSION "2.2.0-rc1"
+#define CHRONOPLOTTER_VERSION "2.2.0-rc2"
 
 #define SCATTER 0
 #define LINE_SD 1
@@ -185,7 +185,7 @@ class SeatingDepthTest : public QWidget
 		double calculateMR ( QList<QPair<double, double> > );
 		QList<SeatingSeries *> ExtractShotMarkerSeriesTar ( QString );
 		QList<SeatingSeries *> ExtractShotMarkerSeriesCsv ( QTextStream & );
-		void optionCheckBoxChanged(QCheckBox *, QComboBox *);
+		void optionCheckBoxChanged(QCheckBox *, QLabel *, QComboBox *);
 		void DisplaySeriesData ( void );
 		void renderGraph ( bool );
 
@@ -261,10 +261,11 @@ class PowderTest : public QWidget
 		void saveGraph(bool);
 
 	protected:
-		void optionCheckBoxChanged(QCheckBox *, QComboBox *);
+		void optionCheckBoxChanged(QCheckBox *, QLabel *, QComboBox *);
 		ChronoSeries *ExtractLabRadarSeries ( QTextStream & );
 		QList<ChronoSeries *> ExtractMagnetoSpeedSeries ( QTextStream & );
 		QList<ChronoSeries *> ExtractProChronoSeries ( QTextStream & );
+		QList<ChronoSeries *> ExtractProChronoSeries_format2 ( QTextStream & );
 		QList<ChronoSeries *> ExtractShotMarkerSeriesTar ( QString );
 		void DisplaySeriesData ( void );
 		void renderGraph ( bool );
